@@ -1,87 +1,89 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-from scipy.stats import norm
+import pandas_ta as ta  # Biblioteca para análise técnica
+import plotly.graph_objects as go
 
-# Configuração
-st.set_page_config(page_title="Scanner de Rentabilidade 7%", layout="wide")
+st.set_page_config(page_title="Sinalizador de Entrada Buy Side", layout="wide")
 
-st.title("🎯 Estratégia Buy Side: Alvo 7%")
-st.subheader("Foco: Rentabilidade Total (Valorização + Prêmio)")
+st.title("🎯 Sinalizador de Entradas Estatísticas")
+st.subheader("Foco: Ações < R$ 10 com Alta Probabilidade de Repique")
 
-# Lista de ativos abaixo de R$ 10 com liquidez
-TICKERS_SA = ["COGN3.SA", "MGLU3.SA", "HAPV3.SA", "BHIA3.SA", "RAIZ4.SA", "MRVE3.SA", "PETZ3.SA", "JHSF3.SA", "AZUL4.SA"]
+# Lista de ativos com boa liquidez no Buy Side
+TICKERS = ["MGLU3.SA", "COGN3.SA", "HAPV3.SA", "RAIZ4.SA", "MRVE3.SA", "PETZ3.SA", "AZUL4.SA", "CSNA3.SA", "USIM5.SA", "CIEL3.SA"]
 
-def calcular_dados(ticker, alvo_perc):
+def check_signal(ticker):
     try:
-        asset = yf.Ticker(ticker)
-        hist = asset.history(period="60d")
-        if hist.empty: return None
+        df = yf.download(ticker, period="1y", interval="1d", progress=False)
+        if df.empty: return None
         
-        preco_atual = hist['Close'].iloc[-1]
-        if preco_atual > 10.0: return None
+        # Cálculos Técnicos
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        df['SMA200'] = ta.sma(df['Close'], length=200)
         
-        # Estatísticas
-        returns = np.log(hist['Close'] / hist['Close'].shift(1))
-        vol_diaria = returns.std()
+        last_price = df['Close'].iloc[-1]
+        last_rsi = df['RSI'].iloc[-1]
+        sma200 = df['SMA200'].iloc[-1]
         
-        strike_alvo = preco_atual * (1 + alvo_perc)
+        if last_price > 10.0: return None
+
+        # Lógica do Sinal
+        # Se RSI < 35, a probabilidade de subir em breve é estatisticamente alta
+        status = "AGUARDAR"
+        cor = "white"
         
-        # Probabilidade de NÃO ser exercido (Manter a ação)
-        # d2 do modelo Black-Scholes para probabilidade ITM/OTM
-        d2 = (np.log(strike_alvo / preco_atual) / (vol_diaria * np.sqrt(21)))
-        prob_manter = norm.cdf(d2)
-        
+        if last_rsi < 35:
+            status = "🔥 OPORTUNIDADE (Sobrecompra)"
+            cor = "green"
+        elif last_rsi > 70:
+            status = "⚠️ EVITAR (Esticada demais)"
+            cor = "red"
+
         return {
             "Ticker": ticker.replace(".SA", ""),
-            "Preço Atual": round(preco_atual, 2),
-            "Strike (7%)": round(strike_alvo, 2),
-            "Prob. Manter Ação": round(prob_manter * 100, 1),
-            "Lucro Se Exercido": f"{alvo_perc*100:.0f}% + Prêmio"
+            "Preço": round(last_price, 2),
+            "RSI (Força)": round(last_rsi, 2),
+            "Acima da Média 200?": "Sim" if last_price > sma200 else "Não",
+            "Sinal": status
         }
     except:
         return None
 
-# Interface
-st.sidebar.header("Configurações")
-alvo = st.sidebar.slider("Alvo de Venda (%)", 5.0, 10.0, 7.0) / 100
-
-if st.button('🚀 Escanear Melhores Taxas'):
+# Interface do Usuário
+if st.button('🔍 Escanear Oportunidades para Segunda-Feira'):
     resultados = []
-    with st.spinner('Calculando probabilidades para o próximo pregão...'):
-        for t in TICKERS_SA:
-            res = calcular_dados(t, alvo)
+    with st.spinner('Analisando gráficos históricos...'):
+        for t in TICKERS:
+            res = check_signal(t)
             if res: resultados.append(res)
-            
+    
     if resultados:
-        df = pd.DataFrame(resultados).sort_values(by="Prob. Manter Ação", ascending=False)
+        df_res = pd.DataFrame(resultados)
         
-        # Exibição
-        st.write(f"### Ranking de Ativos para Alvo de {alvo*100:.0f}%")
-        
-        # Estilização
-        def color_prob(val):
-            color = 'green' if val > 75 else 'orange' if val > 65 else 'red'
-            return f'color: {color}'
+        # Exibição da Tabela
+        st.write("### Relatório de Entradas")
+        st.dataframe(df_res.style.apply(lambda x: ['background-color: #004d00' if v == '🔥 OPORTUNIDADE (Sobrecompra)' else '' for v in x], axis=1), use_container_width=True)
 
-        st.table(df.style.applymap(color_prob, subset=['Prob. Manter Ação']))
-        
-        # Plano de Trade
-        st.write("---")
-        selecionado = st.selectbox("Simular Ordem para:", df["Ticker"])
-        detalhe = df[df["Ticker"] == selecionado].iloc[0]
-        
-        st.info(f"""
-        **Plano de sábado para {selecionado}:**
-        - Preço de referência: **R$ {detalhe['Preço Atual']}**
-        - Strike para buscar: **R$ {detalhe['Strike (7%)']}**
-        - Se a ação subir e você for exercido: Ganha **{alvo*100:.0f}%** de lucro bruto.
-        - Se a ação não chegar lá: Você fica com o prêmio da opção e **mantém os papéis**.
+        # Explicação do Alvo
+        st.info("""
+        **Como usar este App no sábado:**
+        1. Olhe os ativos marcados como **OPORTUNIDADE**.
+        2. Eles estão com o RSI baixo, o que significa que "cansaram de cair".
+        3. Sua meta é entrar na segunda-feira e buscar os **7% de lucro**.
         """)
+        
+        # Gráfico de Apoio
+        escolha = st.selectbox("Veja o gráfico de:", df_res["Ticker"])
+        df_plot = yf.download(f"{escolha}.SA", period="6mo")
+        fig = go.Figure(data=[go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'])])
+        fig.update_layout(title=f"Gráfico de {escolha}", template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Nenhum ativo disponível nos critérios.")
+        st.warning("Nenhum ativo nos critérios encontrados hoje.")
 
-st.markdown("""
-> **Dica do Especialista:** Ao aceitar o exercício em 7%, você pode focar em vender opções **ATM (no dinheiro)** ou ligeiramente **OTM (fora do dinheiro)**. Isso maximiza o valor do prêmio que você recebe na largada.
+st.sidebar.markdown("""
+### Por que isso funciona?
+O **RSI (IFR)** mede a velocidade e a mudança dos movimentos de preço. 
+Estatisticamente, quando ele cai abaixo de 30-35, o preço está em uma região onde os compradores costumam aparecer. 
+Para você que opera no **Buy Side**, é o melhor momento para entrar.
 """)
