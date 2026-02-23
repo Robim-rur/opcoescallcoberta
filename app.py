@@ -5,8 +5,8 @@ import numpy as np
 
 st.set_page_config(page_title="Scanner Ichimoku – Roberson", layout="wide")
 
-st.title("📈 Scanner de Continuação de Tendência – Ichimoku")
-st.subheader("Somente operações compradas | Diário com confirmação semanal")
+st.title("📈 Scanner Ichimoku – Continuação de Tendência")
+st.subheader("Pullback + retomada | diário com confirmação semanal")
 
 # =====================================================
 # LISTA INTEGRAL DE 178 ATIVOS
@@ -46,7 +46,6 @@ def ichimoku(df):
     senkou_a = (tenkan + kijun) / 2
     senkou_b = (high.rolling(52).max() + low.rolling(52).min()) / 2
 
-    # nuvem projetada para frente 26 períodos
     cloud_a = senkou_a.shift(26)
     cloud_b = senkou_b.shift(26)
 
@@ -72,31 +71,30 @@ def check_ativo(ticker):
         prev = df.iloc[-2]
 
         cloud_top = max(last["CloudA"], last["CloudB"])
-        cloud_bottom = min(last["CloudA"], last["CloudB"])
 
-        cloud_top_prev = max(prev["CloudA"], prev["CloudB"])
-        cloud_bottom_prev = min(prev["CloudA"], prev["CloudB"])
-
-        # -------------------------------
-        # Regras do diário
-        # -------------------------------
+        # -------------------------
+        # DIÁRIO
+        # -------------------------
 
         preco_acima_nuvem = last["Close"] > cloud_top
         tenkan_acima_kijun = last["Tenkan"] > last["Kijun"]
         retomada = last["Close"] > last["Tenkan"]
 
+        tocou_tenkan = prev["Low"] <= prev["Tenkan"] <= prev["High"]
         tocou_kijun = prev["Low"] <= prev["Kijun"] <= prev["High"]
-        tocou_nuvem = (prev["Low"] <= cloud_top_prev) and (prev["High"] >= cloud_bottom_prev)
 
-        pullback_valido = tocou_kijun or tocou_nuvem
+        cloud_top_prev = max(prev["CloudA"], prev["CloudB"])
+        cloud_bot_prev = min(prev["CloudA"], prev["CloudB"])
 
-        # -------------------------------
-        # Confirmação semanal
-        # -------------------------------
+        tocou_nuvem = (prev["Low"] <= cloud_top_prev) and (prev["High"] >= cloud_bot_prev)
 
-        dfw = df.copy()
+        pullback_valido = tocou_tenkan or tocou_kijun or tocou_nuvem
 
-        dfw = dfw.resample("W-FRI").agg({
+        # -------------------------
+        # SEMANAL (mais realista)
+        # -------------------------
+
+        dfw = df.resample("W-FRI").agg({
             "Open": "first",
             "High": "max",
             "Low": "min",
@@ -104,7 +102,6 @@ def check_ativo(ticker):
         })
 
         dfw["Tenkan"], dfw["Kijun"], dfw["CloudA"], dfw["CloudB"] = ichimoku(dfw)
-
         dfw = dfw.dropna()
 
         if dfw.empty:
@@ -112,9 +109,8 @@ def check_ativo(ticker):
 
         lastw = dfw.iloc[-1]
 
-        cloud_top_w = max(lastw["CloudA"], lastw["CloudB"])
-
-        semanal_ok = lastw["Close"] > cloud_top_w
+        # confirmação de tendência no semanal pelo Kijun
+        semanal_ok = lastw["Close"] > lastw["Kijun"]
 
         sinal = (
             preco_acima_nuvem and
@@ -127,11 +123,10 @@ def check_ativo(ticker):
         return {
             "Ticker": ticker.replace(".SA", ""),
             "Preço": round(last["Close"], 2),
-            "Tenkan": round(last["Tenkan"], 2),
-            "Kijun": round(last["Kijun"], 2),
             "Diário > nuvem": "Sim" if preco_acima_nuvem else "Não",
-            "Semanal > nuvem": "Sim" if semanal_ok else "Não",
+            "Tenkan > Kijun": "Sim" if tenkan_acima_kijun else "Não",
             "Pullback": "Sim" if pullback_valido else "Não",
+            "Semanal > Kijun": "Sim" if semanal_ok else "Não",
             "Sinal": "✅ CONTEXTO DE ENTRADA" if sinal else "—"
         }
 
@@ -160,7 +155,7 @@ if st.button("🔎 Escanear 178 ativos"):
 
         df_ok = df[df["Sinal"] == "✅ CONTEXTO DE ENTRADA"]
 
-        st.subheader("Ativos em contexto de entrada (Ichimoku)")
+        st.subheader("Ativos em contexto de entrada – Ichimoku")
 
         st.dataframe(df_ok, use_container_width=True)
 
@@ -168,14 +163,18 @@ if st.button("🔎 Escanear 178 ativos"):
 
 
 st.sidebar.markdown("""
-### Scanner Ichimoku – regras
+### Regras (versão ajustada)
 
-✔ Preço acima da nuvem no diário  
-✔ Tenkan acima do Kijun  
-✔ Candle anterior tocou Kijun ou nuvem  
-✔ Candle atual retomou acima do Tenkan  
-✔ Preço acima da nuvem no semanal  
+DIÁRIO
+- Preço acima da nuvem
+- Tenkan acima do Kijun
+- Candle anterior tocou Tenkan, Kijun ou nuvem
+- Candle atual fechou acima do Tenkan
+
+SEMANAL
+- Fechamento acima do Kijun
 
 Scanner de continuação de tendência.
 Somente compra.
+Filtro pensado para não matar sinal.
 """)
