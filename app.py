@@ -54,7 +54,7 @@ def stochastic(df, k=14):
     return 100 * (df["Close"] - low_min) / (high_max - low_min)
 
 # ============================================================
-# ADX / DMI totalmente em Series
+# ADX / DMI
 # ============================================================
 
 def adx_calc(df, n=14):
@@ -109,7 +109,7 @@ def calcula_probabilidade(df, sinais, alvo):
 
     idxs = sinais[sinais].index
 
-    if len(idxs) < 10:
+    if len(idxs) < 15:
         return None
 
     acertos = 0
@@ -145,18 +145,14 @@ def analisar(ticker):
     if df is None or len(df) < 250:
         return None
 
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-    # CORREÇÃO DEFINITIVA DO PROBLEMA DO SEU ERRO
-    # (quando o yfinance vem com colunas MultiIndex)
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     df = df[["Open","High","Low","Close","Volume"]].copy()
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-    df["EMA21"] = ema(df["Close"], 21)
-    df["EMA50"] = ema(df["Close"], 50)
+    # ================= Indicadores =================
+
+    df["EMA29"] = ema(df["Close"], 29)
     df["RSI"] = rsi(df["Close"])
     df["MACD_H"] = macd_hist(df["Close"])
     df["STO"] = stochastic(df)
@@ -168,10 +164,11 @@ def analisar(ticker):
     df["-DI"] = minus_di
 
     df["MM20"] = df["Close"].rolling(20).mean()
-    df["BBmid"] = df["MM20"]
 
     df["OBV"] = obv(df)
     df["OBV_slope"] = df["OBV"].diff(5)
+
+    df["MAX20"] = df["High"].rolling(20).max()
 
     df = df.dropna()
 
@@ -180,16 +177,18 @@ def analisar(ticker):
 
     sinais = pd.DataFrame(index=df.index)
 
-    sinais["i1"] = df["Close"] > df["EMA21"]
-    sinais["i2"] = df["Close"] > df["EMA50"]
-    sinais["i3"] = df["RSI"] > 50
-    sinais["i4"] = df["MACD_H"] > 0
-    sinais["i5"] = df["STO"] > 50
-    sinais["i6"] = df["ADX"] > 20
-    sinais["i7"] = df["+DI"] > df["-DI"]
-    sinais["i8"] = df["Close"] > df["MM20"]
-    sinais["i9"] = df["Close"] > df["BBmid"]
-    sinais["i10"] = df["OBV_slope"] > 0
+    # ================= 10 indicadores =================
+
+    sinais["i1"] = df["Close"] > df["EMA29"]                # tendência principal
+    sinais["i2"] = df["RSI"] > 50
+    sinais["i3"] = df["MACD_H"] > 0
+    sinais["i4"] = df["STO"] > 50
+    sinais["i5"] = df["ADX"] > 20
+    sinais["i6"] = df["+DI"] > df["-DI"]
+    sinais["i7"] = df["Close"] > df["MM20"]
+    sinais["i8"] = df["OBV_slope"] > 0
+    sinais["i9"] = df["Close"] > df["Close"].shift(1)
+    sinais["i10"] = df["Close"] >= df["MAX20"].shift(1)     # rompimento curto
 
     votos = sinais.sum(axis=1)
     maioria = votos >= 6
@@ -198,10 +197,20 @@ def analisar(ticker):
 
     prob = calcula_probabilidade(df, maioria, alvo)
 
-    last_votos = int(votos.iloc[-1])
     last = df.iloc[-1]
+    last_votos = int(votos.iloc[-1])
+
+    # -----------------------------
+    # Filtros finais do app
+    # -----------------------------
+
+    if last["Close"] <= last["EMA29"]:
+        return None
 
     if last_votos < 6:
+        return None
+
+    if prob is None or prob < 60:
         return None
 
     return {
@@ -226,19 +235,24 @@ if st.button("Escanear ativos"):
                 resultados.append(r)
 
     if len(resultados) == 0:
-        st.warning("Nenhum ativo passou no critério mínimo de maioria.")
+        st.warning("Nenhum ativo passou nos filtros (EMA29 + consenso + probabilidade mínima).")
     else:
         df = pd.DataFrame(resultados)
-        df = df.sort_values("Probabilidade (%)", ascending=False, na_position="last")
+        df = df.sort_values("Probabilidade (%)", ascending=False)
         st.dataframe(df, use_container_width=True)
-        st.write(f"Total de ativos em maioria de sinais: {len(df)}")
+        st.write(f"Total de ativos aprovados: {len(df)}")
 
 st.sidebar.markdown("""
-Scanner por votação de indicadores.
+Scanner por consenso de indicadores.
 
-Entrada quando:
-pelo menos 6 de 10 indicadores estão positivos.
+Condições finais:
+- Preço acima da EMA 29
+- Mínimo de 6 indicadores positivos
+- Probabilidade histórica mínima de 60%
+- Alvo:
+  - ações e BDRs: 8%
+  - FIIs: 6%
 
-A probabilidade é medida pelo próprio histórico do ativo,
+A probabilidade é medida no próprio histórico do ativo,
 verificando se o preço atingiu o alvo em até 20 pregões.
 """)
