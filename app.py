@@ -3,10 +3,10 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Scanner Ichimoku – Roberson", layout="wide")
+st.set_page_config(page_title="Scanner – Rompimento com Contração", layout="wide")
 
-st.title("📈 Scanner Ichimoku – Continuação de Tendência")
-st.subheader("Pullback + retomada | diário com confirmação semanal")
+st.title("📊 Scanner – Rompimento após Contração de Volatilidade")
+st.subheader("Execução no diário | filtro de tendência no semanal | buy only")
 
 # =====================================================
 # LISTA INTEGRAL DE 178 ATIVOS
@@ -34,22 +34,24 @@ ativos_scan = sorted(set([
     "KNCR11.SA","KNIP11.SA","CPTS11.SA","IRDM11.SA","DIVO11.SA","NDIV11.SA","SPUB11.SA"
 ]))
 
+# -----------------------------------------------------
 
-def ichimoku(df):
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
 
+
+def atr(df, period=14):
     high = df["High"]
     low = df["Low"]
+    close = df["Close"]
 
-    tenkan = (high.rolling(9).max() + low.rolling(9).min()) / 2
-    kijun = (high.rolling(26).max() + low.rolling(26).min()) / 2
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
 
-    senkou_a = (tenkan + kijun) / 2
-    senkou_b = (high.rolling(52).max() + low.rolling(52).min()) / 2
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    cloud_a = senkou_a.shift(26)
-    cloud_b = senkou_b.shift(26)
-
-    return tenkan, kijun, cloud_a, cloud_b
+    return tr.rolling(period).mean()
 
 
 def check_ativo(ticker):
@@ -60,39 +62,28 @@ def check_ativo(ticker):
         if df is None or df.empty:
             return None
 
-        df["Tenkan"], df["Kijun"], df["CloudA"], df["CloudB"] = ichimoku(df)
+        df["ATR5"] = atr(df, 5)
+        df["ATR20"] = atr(df, 20)
+
+        df["High20"] = df["High"].shift(1).rolling(20).max()
 
         df = df.dropna()
 
-        if len(df) < 60:
+        if len(df) < 50:
             return None
 
         last = df.iloc[-1]
-        prev = df.iloc[-2]
 
-        cloud_top = max(last["CloudA"], last["CloudB"])
+        # ---------------------------
+        # Diário
+        # ---------------------------
 
-        # -------------------------
-        # DIÁRIO
-        # -------------------------
+        rompimento = last["Close"] > last["High20"]
+        contracao = last["ATR5"] < last["ATR20"]
 
-        preco_acima_nuvem = last["Close"] > cloud_top
-        tenkan_acima_kijun = last["Tenkan"] > last["Kijun"]
-        retomada = last["Close"] > last["Tenkan"]
-
-        tocou_tenkan = prev["Low"] <= prev["Tenkan"] <= prev["High"]
-        tocou_kijun = prev["Low"] <= prev["Kijun"] <= prev["High"]
-
-        cloud_top_prev = max(prev["CloudA"], prev["CloudB"])
-        cloud_bot_prev = min(prev["CloudA"], prev["CloudB"])
-
-        tocou_nuvem = (prev["Low"] <= cloud_top_prev) and (prev["High"] >= cloud_bot_prev)
-
-        pullback_valido = tocou_tenkan or tocou_kijun or tocou_nuvem
-
-        # -------------------------
-        # SEMANAL (mais realista)
-        # -------------------------
+        # ---------------------------
+        # Semanal
+        # ---------------------------
 
         dfw = df.resample("W-FRI").agg({
             "Open": "first",
@@ -101,7 +92,7 @@ def check_ativo(ticker):
             "Close": "last"
         })
 
-        dfw["Tenkan"], dfw["Kijun"], dfw["CloudA"], dfw["CloudB"] = ichimoku(dfw)
+        dfw["EMA20"] = ema(dfw["Close"], 20)
         dfw = dfw.dropna()
 
         if dfw.empty:
@@ -109,24 +100,16 @@ def check_ativo(ticker):
 
         lastw = dfw.iloc[-1]
 
-        # confirmação de tendência no semanal pelo Kijun
-        semanal_ok = lastw["Close"] > lastw["Kijun"]
+        semanal_ok = lastw["Close"] > lastw["EMA20"]
 
-        sinal = (
-            preco_acima_nuvem and
-            tenkan_acima_kijun and
-            retomada and
-            pullback_valido and
-            semanal_ok
-        )
+        sinal = rompimento and contracao and semanal_ok
 
         return {
             "Ticker": ticker.replace(".SA", ""),
             "Preço": round(last["Close"], 2),
-            "Diário > nuvem": "Sim" if preco_acima_nuvem else "Não",
-            "Tenkan > Kijun": "Sim" if tenkan_acima_kijun else "Não",
-            "Pullback": "Sim" if pullback_valido else "Não",
-            "Semanal > Kijun": "Sim" if semanal_ok else "Não",
+            "Romp. 20c": "Sim" if rompimento else "Não",
+            "ATR5 < ATR20": "Sim" if contracao else "Não",
+            "Semanal > EMA20": "Sim" if semanal_ok else "Não",
             "Sinal": "✅ CONTEXTO DE ENTRADA" if sinal else "—"
         }
 
@@ -138,7 +121,7 @@ if st.button("🔎 Escanear 178 ativos"):
 
     resultados = []
 
-    with st.spinner("Analisando mercado..."):
+    with st.spinner("Analisando ativos..."):
         for t in ativos_scan:
             r = check_ativo(t)
             if r is not None:
@@ -155,26 +138,22 @@ if st.button("🔎 Escanear 178 ativos"):
 
         df_ok = df[df["Sinal"] == "✅ CONTEXTO DE ENTRADA"]
 
-        st.subheader("Ativos em contexto de entrada – Ichimoku")
-
+        st.subheader("Ativos em contexto de entrada – rompimento com contração")
         st.dataframe(df_ok, use_container_width=True)
 
         st.write(f"Total em contexto: {len(df_ok)}")
 
 
 st.sidebar.markdown("""
-### Regras (versão ajustada)
+### Regras do scanner
 
 DIÁRIO
-- Preço acima da nuvem
-- Tenkan acima do Kijun
-- Candle anterior tocou Tenkan, Kijun ou nuvem
-- Candle atual fechou acima do Tenkan
+• Fechamento acima da máxima dos últimos 20 candles
+• ATR(5) menor que ATR(20)  → contração de volatilidade
 
 SEMANAL
-- Fechamento acima do Kijun
+• Fechamento acima da EMA 20
 
-Scanner de continuação de tendência.
+Scanner de continuação por rompimento curto.
 Somente compra.
-Filtro pensado para não matar sinal.
 """)
