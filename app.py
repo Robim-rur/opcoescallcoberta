@@ -53,17 +53,21 @@ def stochastic(df, k=14):
     high_max = df["High"].rolling(k).max()
     return 100 * (df["Close"] - low_min) / (high_max - low_min)
 
+# ============================================================
+# ADX / DMI totalmente em Series
+# ============================================================
+
 def adx_calc(df, n=14):
 
     high = df["High"]
     low = df["Low"]
     close = df["Close"]
 
-    plus_dm = high.diff()
-    minus_dm = -low.diff()
+    up_move = high.diff()
+    down_move = low.shift() - low
 
-    plus_dm = plus_dm.where(plus_dm > 0, 0.0)
-    minus_dm = minus_dm.where(minus_dm > 0, 0.0)
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
 
     tr1 = high - low
     tr2 = (high - close.shift()).abs()
@@ -73,18 +77,15 @@ def adx_calc(df, n=14):
 
     atr = tr.rolling(n).mean()
 
-    plus_di = 100 * (plus_dm.rolling(n).mean() / atr)
-    minus_di = 100 * (minus_dm.rolling(n).mean() / atr)
+    plus_di = 100 * pd.Series(plus_dm, index=df.index).rolling(n).mean() / atr
+    minus_di = 100 * pd.Series(minus_dm, index=df.index).rolling(n).mean() / atr
 
     dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-    adx_val = dx.rolling(n).mean()
+    adx = dx.rolling(n).mean()
 
-    # >>> GARANTIA DE SERIES (corrige o erro do seu ambiente)
-    adx_val = pd.Series(adx_val.values, index=df.index)
-    plus_di = pd.Series(plus_di.values, index=df.index)
-    minus_di = pd.Series(minus_di.values, index=df.index)
+    return adx, plus_di, minus_di
 
-    return adx_val, plus_di, minus_di
+# ============================================================
 
 def obv(df):
     direction = np.sign(df["Close"].diff()).fillna(0)
@@ -133,12 +134,26 @@ def calcula_probabilidade(df, sinais, alvo):
 
 def analisar(ticker):
 
-    df = yf.download(ticker, period="3y", interval="1d", progress=False)
+    df = yf.download(
+        ticker,
+        period="3y",
+        interval="1d",
+        auto_adjust=False,
+        progress=False
+    )
 
     if df is None or len(df) < 250:
         return None
 
-    df = df.copy()
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    # CORREÇÃO DEFINITIVA DO PROBLEMA DO SEU ERRO
+    # (quando o yfinance vem com colunas MultiIndex)
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    df = df[["Open","High","Low","Close","Volume"]].copy()
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     df["EMA21"] = ema(df["Close"], 21)
     df["EMA50"] = ema(df["Close"], 50)
