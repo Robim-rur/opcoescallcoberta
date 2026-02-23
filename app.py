@@ -3,103 +3,81 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from scipy.stats import norm
-import plotly.graph_objects as go
 
-# Configuração da página
-st.set_page_config(page_title="Scanner Estatístico Buy Side", layout="wide")
+# Configuração
+st.set_page_config(page_title="Planejador Noturno Buy Side", layout="wide")
 
-st.title("📊 Scanner de Opções: Maior Probabilidade de Lucro")
-st.subheader("Filtro: Preço < R$ 10.00 | Alvo: +5% de Valorização")
+st.title("🌙 Planejador de Venda Coberta (Operação Pós-Mercado)")
+st.info("Dados baseados no fechamento do último pregão. Ideal para planejar ordens de abertura.")
 
-# Lista de ativos com liquidez em opções (preços baixos)
-TICKERS_SA = [
-    "COGN3.SA", "MGLU3.SA", "HAPV3.SA", "BHIA3.SA", "CASH3.SA", 
-    "AZUL4.SA", "RAIZ4.SA", "MRVE3.SA", "CVCB3.SA", "PETZ3.SA", 
-    "LWSA3.SA", "JHSF3.SA", "POMO4.SA", "POSI3.SA", "USIM5.SA", "BEEF3.SA"
-]
+TICKERS_SA = ["COGN3.SA", "MGLU3.SA", "HAPV3.SA", "BHIA3.SA", "RAIZ4.SA", "MRVE3.SA", "PETZ3.SA", "JHSF3.SA", "USIM5.SA"]
 
-def calcular_probabilidade(S, K, vol, t=30/365):
-    """
-    Calcula a probabilidade do preço terminar abaixo do strike (não ser exercido).
-    S: Preço Atual, K: Strike, vol: Volatilidade, t: Tempo (em anos)
-    """
-    if vol == 0 or S == 0: return 0
-    d2 = (np.log(S / K) + (- 0.5 * vol ** 2) * t) / (vol * np.sqrt(t))
-    prob_nao_exercido = norm.cdf(d2)
-    return prob_nao_exercido
+def analisar_ativo_noturno(ticker):
+    asset = yf.Ticker(ticker)
+    # Pegamos 60 dias para uma volatilidade robusta
+    hist = asset.history(period="60d")
+    if hist.empty: return None
+    
+    ultimo_fechamento = hist['Close'].iloc[-1]
+    data_fechamento = hist.index[-1].strftime('%d/%m/%Y')
+    
+    if ultimo_fechamento > 10.0: return None
+    
+    # Cálculo de Volatilidade Histórica Anualizada
+    log_returns = np.log(hist['Close'] / hist['Close'].shift(1))
+    vol_diaria = log_returns.std()
+    vol_anual = vol_diaria * np.sqrt(252)
+    
+    # Alvo de 5%
+    strike_alvo = ultimo_fechamento * 1.05
+    
+    # Estatística: Probabilidade de ficar ABAIXO do strike em 21 dias úteis (1 mês)
+    # Usamos o modelo simplificado de probabilidade log-normal
+    d2 = (np.log(strike_alvo / ultimo_fechamento) / (vol_diaria * np.sqrt(21)))
+    prob_sucesso = norm.cdf(d2)
+    
+    return {
+        "Ticker": ticker.replace(".SA", ""),
+        "Fechamento": round(ultimo_fechamento, 2),
+        "Data": data_fechamento,
+        "Strike Alvo": round(strike_alvo, 2),
+        "Prob. de Manter Ação (%)": round(prob_sucesso * 100, 2),
+        "Volatilidade": round(vol_anual * 100, 2)
+    }
 
-def scanner_estatistico(tickers):
+# Interface
+if st.button('🔍 Gerar Relatório de Oportunidades para o Próximo Pregão'):
     resultados = []
-    progresso = st.progress(0)
+    for t in TICKERS_SA:
+        res = analisar_ativo_noturno(t)
+        if res: resultados.append(res)
     
-    for idx, ticker in enumerate(tickers):
-        try:
-            asset = yf.Ticker(ticker)
-            # Histórico para calcular volatilidade histórica (proxy para a implícita)
-            hist = asset.history(period="3mo")
-            if len(hist) < 20: continue
-            
-            preco_atual = hist['Close'].iloc[-1]
-            
-            if preco_atual < 10.0:
-                # Cálculo de Volatilidade (Anualizada)
-                returns = np.log(hist['Close'] / hist['Close'].shift(1))
-                volatilidade = returns.std() * np.sqrt(252)
-                
-                strike_alvo = preco_atual * 1.05
-                # Probabilidade de sucesso: Preço terminar abaixo do strike 
-                # (você ganha o prêmio e mantém o ativo que valorizou até quase 5%)
-                prob = calcular_probabilidade(preco_atual, strike_alvo, volatilidade)
-                
-                resultados.append({
-                    "Ticker": ticker.replace(".SA", ""),
-                    "Preço Atual": round(preco_atual, 2),
-                    "Strike (+5%)": round(strike_alvo, 2),
-                    "Volatilidade (Anual)": f"{volatilidade*100:.1f}%",
-                    "Prob. de Sucesso*": prob
-                })
-        except Exception as e:
-            pass
-        progresso.progress((idx + 1) / len(tickers))
+    df = pd.DataFrame(resultados)
+    # Ordenar por maior probabilidade de sucesso (estatística a seu favor)
+    df = df.sort_values(by="Prob. de Manter Ação (%)", ascending=False)
     
-    progresso.empty()
-    return pd.DataFrame(resultados)
+    st.write("### 📈 Ranking Estatístico (Ações < R$ 10)")
+    st.table(df)
+    
+    # Seção de Plano de Execução
+    st.write("---")
+    st.write("### 📝 Plano de Execução (Para seu Home Broker)")
+    
+    escolha = st.selectbox("Selecione o ativo que deseja operar:", df["Ticker"])
+    row = df[df["Ticker"] == escolha].iloc[0]
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.success(f"**Estratégia para {escolha}:**")
+        st.write(f"1. Comprar {escolha} na abertura até **R$ {row['Fechamento'] * 1.01:.2f}**")
+        st.write(f"2. Vender CALL com Strike próximo a **R$ {row['Strike Alvo']:.2f}**")
+    
+    with col2:
+        st.metric("Confiança Estatística", f"{row['Prob. de Manter Ação (%)']}%")
+        st.caption("Esta probabilidade indica a chance de você ganhar o prêmio da opção e NÃO ser obrigado a vender a ação, permanecendo com ela em carteira.")
 
-# Execução do Scanner
-if st.button('🔍 Escanear Mercado e Calcular Probabilidades'):
-    with st.spinner('Analisando volatilidade e preços...'):
-        df = scanner_estatistico(TICKERS_SA)
-        
-        if not df.empty:
-            # Ordenação por maior probabilidade de lucro (Prob. de Sucesso)
-            df = df.sort_values(by="Prob. de Sucesso*", ascending=False)
-            
-            # Formatação para exibição
-            df_display = df.copy()
-            df_display["Prob. de Sucesso*"] = df_display["Prob. de Sucesso*"].map("{:.2%}".format)
-            
-            st.write("### Resultado da Análise Estatística")
-            st.markdown("*Ordenado da maior para a menor probabilidade de a ação NÃO ultrapassar os 5% (ideal para manter o ativo e o prêmio).*")
-            
-            # Tabela Estilizada
-            st.table(df_display)
-            
-            # Gráfico Comparativo
-            st.write("---")
-            st.write("### Comparativo Visual: Probabilidade vs Ativo")
-            fig = go.Figure(go.Bar(
-                x=df["Ticker"], 
-                y=df["Prob. de Sucesso*"] * 100,
-                marker_color='royalblue'
-            ))
-            fig.update_layout(title="Probabilidade de Lucro por Ativo (%)", template="plotly_dark", yaxis_title="% Probabilidade")
-            st.plotly_chart(fig, use_container_width=True)
-            
-        else:
-            st.warning("Nenhum ativo abaixo de R$ 10 encontrado nos critérios.")
-
-st.sidebar.info("""
-**Explicação Estatística:**
-A probabilidade é calculada usando a volatilidade histórica dos últimos 90 dias. 
-Uma probabilidade de **80%** significa que, estatisticamente, há 80% de chance de o ativo terminar o mês abaixo do strike (mantendo a ação em carteira e o prêmio no bolso).
+st.sidebar.warning("""
+**Nota de Risco:**
+Operar à noite significa que você está ignorando possíveis notícias que saiam após o fechamento. 
+Sempre confira se não há divulgação de balanços antes da abertura do mercado.
 """)
