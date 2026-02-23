@@ -3,14 +3,12 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Scanner – Rompimento com Contração", layout="wide")
+st.set_page_config(layout="wide")
+st.title("Scanner – Votação de Indicadores + Probabilidade de Alvo")
 
-st.title("📊 Scanner – Rompimento após Contração de Volatilidade")
-st.subheader("Execução no diário | filtro de tendência no semanal | buy only")
-
-# =====================================================
-# LISTA INTEGRAL DE 178 ATIVOS
-# =====================================================
+# ============================================================
+# LISTA DOS ATIVOS (a mesma que você vem usando)
+# ============================================================
 
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -20,30 +18,49 @@ ativos_scan = sorted(set([
     "HAPV3.SA","HYPE3.SA","ITSA4.SA","ITUB4.SA","JBSS3.SA","KLBN11.SA","LREN3.SA","LWSA3.SA","MGLU3.SA","MRFG3.SA",
     "MRVE3.SA","MULT3.SA","NTCO3.SA","PETR3.SA","PETR4.SA","PRIO3.SA","RADL3.SA","RAIL3.SA","RAIZ4.SA","RENT3.SA",
     "RECV3.SA","SANB11.SA","SBSP3.SA","SLCE3.SA","SMTO3.SA","SUZB3.SA","TAEE11.SA","TIMS3.SA","TOTS3.SA","TRPL4.SA",
-    "UGPA3.SA","USIM5.SA","VALE3.SA","VIVT3.SA","VIVA3.SA","WEGE3.SA","YDUQ3.SA","AURE3.SA","BHIA3.SA","CASH3.SA",
-    "CVCB3.SA","DIRR3.SA","ENAT3.SA","GMAT3.SA","IFCM3.SA","INTB3.SA","JHSF3.SA","KEPL3.SA","MOVI3.SA","ORVR3.SA",
-    "PETZ3.SA","PLAS3.SA","POMO4.SA","POSI3.SA","RANI3.SA","RAPT4.SA","STBP3.SA","TEND3.SA","TUPY3.SA",
-    "BRSR6.SA","CXSE3.SA","AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA","TSLA34.SA","META34.SA","NFLX34.SA",
-    "NVDC34.SA","MELI34.SA","BABA34.SA","DISB34.SA","PYPL34.SA","JNJB34.SA","PGCO34.SA","KOCH34.SA","VISA34.SA",
-    "WMTB34.SA","NIKE34.SA","ADBE34.SA","AVGO34.SA","CSCO34.SA","COST34.SA","CVSH34.SA","GECO34.SA","GSGI34.SA",
-    "HDCO34.SA","INTC34.SA","JPMC34.SA","MAEL34.SA","MCDP34.SA","MDLZ34.SA","MRCK34.SA","ORCL34.SA","PEP334.SA",
-    "PFIZ34.SA","PMIC34.SA","QCOM34.SA","SBUX34.SA","TGTB34.SA","TMOS34.SA","TXN34.SA","UNHH34.SA","UPSB34.SA",
-    "VZUA34.SA","ABTT34.SA","AMGN34.SA","AXPB34.SA","BAOO34.SA","CATP34.SA","HONB34.SA","BOVA11.SA","IVVB11.SA",
-    "SMAL11.SA","HASH11.SA","GOLD11.SA","GARE11.SA","HGLG11.SA","XPLG11.SA","VILG11.SA","BRCO11.SA","BTLG11.SA",
-    "XPML11.SA","VISC11.SA","HSML11.SA","MALL11.SA","KNRI11.SA","JSRE11.SA","PVBI11.SA","HGRE11.SA","MXRF11.SA",
-    "KNCR11.SA","KNIP11.SA","CPTS11.SA","IRDM11.SA","DIVO11.SA","NDIV11.SA","SPUB11.SA"
+    "UGPA3.SA","USIM5.SA","VALE3.SA","VIVT3.SA","VIVA3.SA","WEGE3.SA","YDUQ3.SA",
+
+    "AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA","TSLA34.SA","META34.SA","NFLX34.SA","NVDC34.SA","MELI34.SA",
+
+    "HGLG11.SA","XPLG11.SA","VISC11.SA","XPML11.SA","KNRI11.SA","MXRF11.SA","HGRE11.SA","IRDM11.SA","CPTS11.SA"
 ]))
 
-# -----------------------------------------------------
+# ============================================================
 
-def ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+def ema(s, p):
+    return s.ewm(span=p, adjust=False).mean()
 
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-def atr(df, period=14):
-    high = df["High"]
-    low = df["Low"]
-    close = df["Close"]
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def macd_hist(close):
+    ema12 = ema(close, 12)
+    ema26 = ema(close, 26)
+    macd = ema12 - ema26
+    signal = ema(macd, 9)
+    return macd - signal
+
+def stochastic(df, k=14):
+    low_min = df["Low"].rolling(k).min()
+    high_max = df["High"].rolling(k).max()
+    return 100 * (df["Close"] - low_min) / (high_max - low_min)
+
+def adx(df, n=14):
+    high, low, close = df["High"], df["Low"], df["Close"]
+
+    plus_dm = high.diff()
+    minus_dm = low.diff() * -1
+
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm < 0] = 0
 
     tr1 = high - low
     tr2 = (high - close.shift()).abs()
@@ -51,109 +68,149 @@ def atr(df, period=14):
 
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    return tr.rolling(period).mean()
+    atr = tr.rolling(n).mean()
 
+    plus_di = 100 * (plus_dm.rolling(n).mean() / atr)
+    minus_di = 100 * (minus_dm.rolling(n).mean() / atr)
 
-def check_ativo(ticker):
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    adx = dx.rolling(n).mean()
 
-    try:
-        df = yf.download(ticker, period="2y", interval="1d", progress=False)
+    return adx, plus_di, minus_di
 
-        if df is None or df.empty:
-            return None
+def obv(df):
+    direction = np.sign(df["Close"].diff()).fillna(0)
+    return (direction * df["Volume"]).cumsum()
 
-        df["ATR5"] = atr(df, 5)
-        df["ATR20"] = atr(df, 20)
+# ============================================================
 
-        df["High20"] = df["High"].shift(1).rolling(20).max()
+def tipo_ativo(ticker):
 
-        df = df.dropna()
+    if ticker.endswith("34.SA"):
+        return "BDR", 0.08
 
-        if len(df) < 50:
-            return None
+    if ticker.endswith("11.SA"):
+        return "FII", 0.06
 
-        last = df.iloc[-1]
+    return "Ação", 0.08
 
-        # ---------------------------
-        # Diário
-        # ---------------------------
+# ============================================================
 
-        rompimento = last["Close"] > last["High20"]
-        contracao = last["ATR5"] < last["ATR20"]
+def calcula_probabilidade(df, sinais, alvo):
 
-        # ---------------------------
-        # Semanal
-        # ---------------------------
+    indices = sinais[sinais].index
 
-        dfw = df.resample("W-FRI").agg({
-            "Open": "first",
-            "High": "max",
-            "Low": "min",
-            "Close": "last"
-        })
-
-        dfw["EMA20"] = ema(dfw["Close"], 20)
-        dfw = dfw.dropna()
-
-        if dfw.empty:
-            return None
-
-        lastw = dfw.iloc[-1]
-
-        semanal_ok = lastw["Close"] > lastw["EMA20"]
-
-        sinal = rompimento and contracao and semanal_ok
-
-        return {
-            "Ticker": ticker.replace(".SA", ""),
-            "Preço": round(last["Close"], 2),
-            "Romp. 20c": "Sim" if rompimento else "Não",
-            "ATR5 < ATR20": "Sim" if contracao else "Não",
-            "Semanal > EMA20": "Sim" if semanal_ok else "Não",
-            "Sinal": "✅ CONTEXTO DE ENTRADA" if sinal else "—"
-        }
-
-    except Exception:
+    if len(indices) < 10:
         return None
 
+    acertos = 0
+    total = 0
 
-if st.button("🔎 Escanear 178 ativos"):
+    for idx in indices[:-20]:
+
+        entrada = df.loc[idx, "Close"]
+        futuro = df.loc[idx:].iloc[1:21]
+
+        if futuro["High"].max() >= entrada * (1 + alvo):
+            acertos += 1
+
+        total += 1
+
+    if total == 0:
+        return None
+
+    return round(100 * acertos / total, 1)
+
+# ============================================================
+
+def analisar(ticker):
+
+    df = yf.download(ticker, period="3y", interval="1d", progress=False)
+
+    if df is None or len(df) < 250:
+        return None
+
+    df["EMA21"] = ema(df["Close"], 21)
+    df["EMA50"] = ema(df["Close"], 50)
+    df["RSI"] = rsi(df["Close"])
+    df["MACD_H"] = macd_hist(df["Close"])
+    df["STO"] = stochastic(df)
+    df["ADX"], df["+DI"], df["-DI"] = adx(df)
+
+    df["MM20"] = df["Close"].rolling(20).mean()
+    std = df["Close"].rolling(20).std()
+    df["BBmid"] = df["MM20"]
+
+    df["OBV"] = obv(df)
+    df["OBV_slope"] = df["OBV"].diff(5)
+
+    df = df.dropna()
+
+    if len(df) < 200:
+        return None
+
+    sinais = pd.DataFrame(index=df.index)
+
+    sinais["i1"] = df["Close"] > df["EMA21"]
+    sinais["i2"] = df["Close"] > df["EMA50"]
+    sinais["i3"] = df["RSI"] > 50
+    sinais["i4"] = df["MACD_H"] > 0
+    sinais["i5"] = df["STO"] > 50
+    sinais["i6"] = df["ADX"] > 20
+    sinais["i7"] = df["+DI"] > df["-DI"]
+    sinais["i8"] = df["Close"] > df["MM20"]
+    sinais["i9"] = df["Close"] > df["BBmid"]
+    sinais["i10"] = df["OBV_slope"] > 0
+
+    votos = sinais.sum(axis=1)
+
+    maioria = votos >= 6
+
+    tipo, alvo = tipo_ativo(ticker)
+
+    prob = calcula_probabilidade(df, maioria, alvo)
+
+    last = df.iloc[-1]
+    last_votos = int(votos.iloc[-1])
+
+    if last_votos < 6:
+        return None
+
+    return {
+        "Ativo": ticker.replace(".SA",""),
+        "Tipo": tipo,
+        "Preço": round(last["Close"],2),
+        "Indicadores OK": last_votos,
+        "Alvo": f"{int(alvo*100)}%",
+        "Probabilidade (%)": prob
+    }
+
+# ============================================================
+
+if st.button("Escanear ativos"):
 
     resultados = []
 
-    with st.spinner("Analisando ativos..."):
+    with st.spinner("Processando..."):
         for t in ativos_scan:
-            r = check_ativo(t)
-            if r is not None:
+            r = analisar(t)
+            if r:
                 resultados.append(r)
 
     if len(resultados) == 0:
-        st.warning("Nenhum ativo retornou dados.")
+        st.warning("Nenhum ativo passou no critério mínimo de maioria.")
     else:
-
         df = pd.DataFrame(resultados)
-
-        st.subheader("Resultado geral")
+        df = df.sort_values("Probabilidade (%)", ascending=False, na_position="last")
         st.dataframe(df, use_container_width=True)
-
-        df_ok = df[df["Sinal"] == "✅ CONTEXTO DE ENTRADA"]
-
-        st.subheader("Ativos em contexto de entrada – rompimento com contração")
-        st.dataframe(df_ok, use_container_width=True)
-
-        st.write(f"Total em contexto: {len(df_ok)}")
-
+        st.write(f"Total de ativos em maioria de sinais: {len(df)}")
 
 st.sidebar.markdown("""
-### Regras do scanner
+Scanner por votação de indicadores.
 
-DIÁRIO
-• Fechamento acima da máxima dos últimos 20 candles
-• ATR(5) menor que ATR(20)  → contração de volatilidade
+Entrada quando:
+pelo menos 6 de 10 indicadores estão positivos.
 
-SEMANAL
-• Fechamento acima da EMA 20
-
-Scanner de continuação por rompimento curto.
-Somente compra.
+A probabilidade é medida pelo próprio histórico do ativo,
+verificando se o preço atingiu o alvo em até 20 pregões.
 """)
