@@ -7,7 +7,7 @@ st.set_page_config(layout="wide")
 st.title("Scanner – Votação de Indicadores + Probabilidade de Alvo")
 
 # ============================================================
-# LISTA DOS ATIVOS (a mesma que você vem usando)
+# LISTA DOS ATIVOS
 # ============================================================
 
 ativos_scan = sorted(set([
@@ -54,10 +54,13 @@ def stochastic(df, k=14):
     return 100 * (df["Close"] - low_min) / (high_max - low_min)
 
 def adx(df, n=14):
-    high, low, close = df["High"], df["Low"], df["Close"]
+
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
 
     plus_dm = high.diff()
-    minus_dm = low.diff() * -1
+    minus_dm = -low.diff()
 
     plus_dm[plus_dm < 0] = 0
     minus_dm[minus_dm < 0] = 0
@@ -74,9 +77,9 @@ def adx(df, n=14):
     minus_di = 100 * (minus_dm.rolling(n).mean() / atr)
 
     dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-    adx = dx.rolling(n).mean()
+    adx_val = dx.rolling(n).mean()
 
-    return adx, plus_di, minus_di
+    return adx_val, plus_di, minus_di
 
 def obv(df):
     direction = np.sign(df["Close"].diff()).fillna(0)
@@ -98,15 +101,15 @@ def tipo_ativo(ticker):
 
 def calcula_probabilidade(df, sinais, alvo):
 
-    indices = sinais[sinais].index
+    idxs = sinais[sinais].index
 
-    if len(indices) < 10:
+    if len(idxs) < 10:
         return None
 
     acertos = 0
     total = 0
 
-    for idx in indices[:-20]:
+    for idx in idxs[:-20]:
 
         entrada = df.loc[idx, "Close"]
         futuro = df.loc[idx:].iloc[1:21]
@@ -135,10 +138,15 @@ def analisar(ticker):
     df["RSI"] = rsi(df["Close"])
     df["MACD_H"] = macd_hist(df["Close"])
     df["STO"] = stochastic(df)
-    df["ADX"], df["+DI"], df["-DI"] = adx(df)
+
+    # >>>>>>> CORREÇÃO DO ERRO AQUI <<<<<<<
+    adx_val, plus_di, minus_di = adx(df)
+    df["ADX"] = adx_val
+    df["+DI"] = plus_di
+    df["-DI"] = minus_di
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     df["MM20"] = df["Close"].rolling(20).mean()
-    std = df["Close"].rolling(20).std()
     df["BBmid"] = df["MM20"]
 
     df["OBV"] = obv(df)
@@ -163,7 +171,6 @@ def analisar(ticker):
     sinais["i10"] = df["OBV_slope"] > 0
 
     votos = sinais.sum(axis=1)
-
     maioria = votos >= 6
 
     tipo, alvo = tipo_ativo(ticker)
