@@ -53,7 +53,7 @@ def stochastic(df, k=14):
     high_max = df["High"].rolling(k).max()
     return 100 * (df["Close"] - low_min) / (high_max - low_min)
 
-def adx(df, n=14):
+def adx_calc(df, n=14):
 
     high = df["High"]
     low = df["Low"]
@@ -62,8 +62,8 @@ def adx(df, n=14):
     plus_dm = high.diff()
     minus_dm = -low.diff()
 
-    plus_dm[plus_dm < 0] = 0
-    minus_dm[minus_dm < 0] = 0
+    plus_dm = plus_dm.where(plus_dm > 0, 0.0)
+    minus_dm = minus_dm.where(minus_dm > 0, 0.0)
 
     tr1 = high - low
     tr2 = (high - close.shift()).abs()
@@ -78,6 +78,11 @@ def adx(df, n=14):
 
     dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
     adx_val = dx.rolling(n).mean()
+
+    # >>> GARANTIA DE SERIES (corrige o erro do seu ambiente)
+    adx_val = pd.Series(adx_val.values, index=df.index)
+    plus_di = pd.Series(plus_di.values, index=df.index)
+    minus_di = pd.Series(minus_di.values, index=df.index)
 
     return adx_val, plus_di, minus_di
 
@@ -133,18 +138,19 @@ def analisar(ticker):
     if df is None or len(df) < 250:
         return None
 
+    df = df.copy()
+
     df["EMA21"] = ema(df["Close"], 21)
     df["EMA50"] = ema(df["Close"], 50)
     df["RSI"] = rsi(df["Close"])
     df["MACD_H"] = macd_hist(df["Close"])
     df["STO"] = stochastic(df)
 
-    # >>>>>>> CORREÇÃO DO ERRO AQUI <<<<<<<
-    adx_val, plus_di, minus_di = adx(df)
+    adx_val, plus_di, minus_di = adx_calc(df)
+
     df["ADX"] = adx_val
     df["+DI"] = plus_di
     df["-DI"] = minus_di
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     df["MM20"] = df["Close"].rolling(20).mean()
     df["BBmid"] = df["MM20"]
@@ -177,8 +183,8 @@ def analisar(ticker):
 
     prob = calcula_probabilidade(df, maioria, alvo)
 
-    last = df.iloc[-1]
     last_votos = int(votos.iloc[-1])
+    last = df.iloc[-1]
 
     if last_votos < 6:
         return None
@@ -186,7 +192,7 @@ def analisar(ticker):
     return {
         "Ativo": ticker.replace(".SA",""),
         "Tipo": tipo,
-        "Preço": round(last["Close"],2),
+        "Preço": round(float(last["Close"]), 2),
         "Indicadores OK": last_votos,
         "Alvo": f"{int(alvo*100)}%",
         "Probabilidade (%)": prob
