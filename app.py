@@ -4,255 +4,296 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("Scanner – Votação de Indicadores + Probabilidade de Alvo")
+st.title("Persistência de Tendência – Setup principal e SAR")
 
-# ============================================================
-# LISTA DOS ATIVOS
-# ============================================================
+# ==========================================================
+# LISTA DE ATIVOS (seus 178 ativos)
+# ==========================================================
 
 ativos_scan = sorted(set([
-    "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
-    "BBDC4.SA","BBSE3.SA","BEEF3.SA","BPAC11.SA","BRAP4.SA","BRFS3.SA","BRKM5.SA","CCRO3.SA","CMIG4.SA","CMIN3.SA",
-    "COGN3.SA","CPFE3.SA","CPLE6.SA","CRFB3.SA","CSAN3.SA","CSNA3.SA","CYRE3.SA","DXCO3.SA","EGIE3.SA","ELET3.SA",
-    "ELET6.SA","EMBR3.SA","ENEV3.SA","ENGI11.SA","EQTL3.SA","EZTC3.SA","FLRY3.SA","GGBR4.SA","GOAU4.SA","GOLL4.SA",
-    "HAPV3.SA","HYPE3.SA","ITSA4.SA","ITUB4.SA","JBSS3.SA","KLBN11.SA","LREN3.SA","LWSA3.SA","MGLU3.SA","MRFG3.SA",
-    "MRVE3.SA","MULT3.SA","NTCO3.SA","PETR3.SA","PETR4.SA","PRIO3.SA","RADL3.SA","RAIL3.SA","RAIZ4.SA","RENT3.SA",
-    "RECV3.SA","SANB11.SA","SBSP3.SA","SLCE3.SA","SMTO3.SA","SUZB3.SA","TAEE11.SA","TIMS3.SA","TOTS3.SA","TRPL4.SA",
-    "UGPA3.SA","USIM5.SA","VALE3.SA","VIVT3.SA","VIVA3.SA","WEGE3.SA","YDUQ3.SA",
-
-    "AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA","TSLA34.SA","META34.SA","NFLX34.SA","NVDC34.SA","MELI34.SA",
-
-    "HGLG11.SA","XPLG11.SA","VISC11.SA","XPML11.SA","KNRI11.SA","MXRF11.SA","HGRE11.SA","IRDM11.SA","CPTS11.SA"
+"RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
+"BBDC4.SA","BBSE3.SA","BEEF3.SA","BPAC11.SA","BRAP4.SA","BRFS3.SA","BRKM5.SA","CCRO3.SA","CMIG4.SA","CMIN3.SA",
+"COGN3.SA","CPFE3.SA","CPLE6.SA","CRFB3.SA","CSAN3.SA","CSNA3.SA","CYRE3.SA","DXCO3.SA","EGIE3.SA","ELET3.SA",
+"ELET6.SA","EMBR3.SA","ENEV3.SA","ENGI11.SA","EQTL3.SA","EZTC3.SA","FLRY3.SA","GGBR4.SA","GOAU4.SA","GOLL4.SA",
+"HAPV3.SA","HYPE3.SA","ITSA4.SA","ITUB4.SA","JBSS3.SA","KLBN11.SA","LREN3.SA","LWSA3.SA","MGLU3.SA","MRFG3.SA",
+"MRVE3.SA","MULT3.SA","NTCO3.SA","PETR3.SA","PETR4.SA","PRIO3.SA","RADL3.SA","RAIL3.SA","RAIZ4.SA","RENT3.SA",
+"RECV3.SA","SANB11.SA","SBSP3.SA","SLCE3.SA","SMTO3.SA","SUZB3.SA","TAEE11.SA","TIMS3.SA","TOTS3.SA","TRPL4.SA",
+"UGPA3.SA","USIM5.SA","VALE3.SA","VIVT3.SA","VIVA3.SA","WEGE3.SA","YDUQ3.SA","AURE3.SA","BHIA3.SA","CASH3.SA",
+"CVCB3.SA","DIRR3.SA","ENAT3.SA","GMAT3.SA","IFCM3.SA","INTB3.SA","JHSF3.SA","KEPL3.SA","MOVI3.SA","ORVR3.SA",
+"PETZ3.SA","PLAS3.SA","POMO4.SA","POSI3.SA","RANI3.SA","RAPT4.SA","STBP3.SA","TEND3.SA","TUPY3.SA",
+"BRSR6.SA","CXSE3.SA","AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA","TSLA34.SA","META34.SA","NFLX34.SA",
+"NVDC34.SA","MELI34.SA","BABA34.SA","DISB34.SA","PYPL34.SA","JNJB34.SA","PGCO34.SA","KOCH34.SA","VISA34.SA",
+"WMTB34.SA","NIKE34.SA","ADBE34.SA","AVGO34.SA","CSCO34.SA","COST34.SA","CVSH34.SA","GECO34.SA","GSGI34.SA",
+"HDCO34.SA","INTC34.SA","JPMC34.SA","MAEL34.SA","MCDP34.SA","MDLZ34.SA","MRCK34.SA","ORCL34.SA","PEP334.SA",
+"PFIZ34.SA","PMIC34.SA","QCOM34.SA","SBUX34.SA","TGTB34.SA","TMOS34.SA","TXN34.SA","UNHH34.SA","UPSB34.SA",
+"VZUA34.SA","ABTT34.SA","AMGN34.SA","AXPB34.SA","BAOO34.SA","CATP34.SA","HONB34.SA","BOVA11.SA","IVVB11.SA",
+"SMAL11.SA","HASH11.SA","GOLD11.SA","GARE11.SA","HGLG11.SA","XPLG11.SA","VILG11.SA","BRCO11.SA","BTLG11.SA",
+"XPML11.SA","VISC11.SA","HSML11.SA","MALL11.SA","KNRI11.SA","JSRE11.SA","PVBI11.SA","HGRE11.SA","MXRF11.SA",
+"KNCR11.SA","KNIP11.SA","CPTS11.SA","IRDM11.SA","DIVO11.SA","NDIV11.SA","SPUB11.SA"
 ]))
 
-# ============================================================
+# ==========================================================
+# INDICADORES
+# ==========================================================
 
-def ema(s, p):
-    return s.ewm(span=p, adjust=False).mean()
+def ema(series, n):
+    return series.ewm(span=n, adjust=False).mean()
 
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+def dmi_adx(df, n=14):
 
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
+    up = df["High"].diff()
+    down = -df["Low"].diff()
 
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    plus_dm = np.where((up > down) & (up > 0), up, 0.0)
+    minus_dm = np.where((down > up) & (down > 0), down, 0.0)
 
-def macd_hist(close):
-    ema12 = ema(close, 12)
-    ema26 = ema(close, 26)
-    macd = ema12 - ema26
-    signal = ema(macd, 9)
-    return macd - signal
-
-def stochastic(df, k=14):
-    low_min = df["Low"].rolling(k).min()
-    high_max = df["High"].rolling(k).max()
-    return 100 * (df["Close"] - low_min) / (high_max - low_min)
-
-# ============================================================
-# ADX / DMI
-# ============================================================
-
-def adx_calc(df, n=14):
-
-    high = df["High"]
-    low = df["Low"]
-    close = df["Close"]
-
-    up_move = high.diff()
-    down_move = low.shift() - low
-
-    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-
-    tr1 = high - low
-    tr2 = (high - close.shift()).abs()
-    tr3 = (low - close.shift()).abs()
-
+    tr1 = df["High"] - df["Low"]
+    tr2 = (df["High"] - df["Close"].shift()).abs()
+    tr3 = (df["Low"] - df["Close"].shift()).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
     atr = tr.rolling(n).mean()
 
-    plus_di = 100 * pd.Series(plus_dm, index=df.index).rolling(n).mean() / atr
-    minus_di = 100 * pd.Series(minus_dm, index=df.index).rolling(n).mean() / atr
+    plus_dm = pd.Series(plus_dm, index=df.index)
+    minus_dm = pd.Series(minus_dm, index=df.index)
 
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    plus_di = 100 * plus_dm.rolling(n).mean() / atr
+    minus_di = 100 * minus_dm.rolling(n).mean() / atr
+
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
     adx = dx.rolling(n).mean()
 
-    return adx, plus_di, minus_di
+    return plus_di, minus_di, adx
 
-# ============================================================
+def parabolic_sar(df, step=0.02, max_step=0.2):
 
-def obv(df):
-    direction = np.sign(df["Close"].diff()).fillna(0)
-    return (direction * df["Volume"]).cumsum()
+    high = df["High"].values
+    low = df["Low"].values
 
-# ============================================================
+    sar = np.zeros(len(df))
+    trend = 1
+    af = step
+    ep = high[0]
+    sar[0] = low[0]
 
-def tipo_ativo(ticker):
+    for i in range(1, len(df)):
 
-    if ticker.endswith("34.SA"):
-        return "BDR", 0.08
+        sar[i] = sar[i-1] + af * (ep - sar[i-1])
 
-    if ticker.endswith("11.SA"):
-        return "FII", 0.06
+        if trend == 1:
 
-    return "Ação", 0.08
+            sar[i] = min(sar[i], low[i-1], low[i])
 
-# ============================================================
+            if high[i] > ep:
+                ep = high[i]
+                af = min(af + step, max_step)
 
-def calcula_probabilidade(df, sinais, alvo):
+            if low[i] < sar[i]:
+                trend = -1
+                sar[i] = ep
+                ep = low[i]
+                af = step
 
-    idxs = sinais[sinais].index
+        else:
 
-    if len(idxs) < 15:
+            sar[i] = max(sar[i], high[i-1], high[i])
+
+            if low[i] < ep:
+                ep = low[i]
+                af = min(af + step, max_step)
+
+            if high[i] > sar[i]:
+                trend = 1
+                sar[i] = ep
+                ep = high[i]
+                af = step
+
+    return pd.Series(sar, index=df.index)
+
+# ==========================================================
+# FUNÇÃO DE DURAÇÃO (SURVIVAL)
+# ==========================================================
+
+def duracoes_bool(serie_bool):
+
+    duracoes = []
+    em_sequencia = False
+    cont = 0
+
+    for v in serie_bool:
+
+        if v:
+            em_sequencia = True
+            cont += 1
+        else:
+            if em_sequencia:
+                duracoes.append(cont)
+            em_sequencia = False
+            cont = 0
+
+    if em_sequencia and cont > 0:
+        duracoes.append(cont)
+
+    return duracoes
+
+# ==========================================================
+# PROCESSAMENTO
+# ==========================================================
+
+@st.cache_data(show_spinner=False)
+def processar():
+
+    registros_principal = []
+    registros_sar = []
+
+    hoje = []
+
+    for ticker in ativos_scan:
+
+        try:
+
+            df = yf.download(ticker, period="12y", interval="1d", progress=False)
+            if df is None or len(df) < 300:
+                continue
+
+            df = df.dropna()
+
+            df["EMA69"] = ema(df["Close"], 69)
+
+            pdi, mdi, adx = dmi_adx(df)
+            df["PDI"] = pdi
+            df["MDI"] = mdi
+            df["ADX"] = adx
+
+            df["SAR"] = parabolic_sar(df)
+
+            # semanal
+            weekly = df.resample("W-FRI").last()
+            weekly["EMA69_W"] = ema(weekly["Close"], 69)
+            weekly["trend_ok"] = weekly["Close"] > weekly["EMA69_W"]
+
+            df["trend_semanal"] = weekly["trend_ok"].reindex(df.index, method="ffill")
+
+            # setups
+            df["setup_principal"] = (
+                (df["Close"] > df["EMA69"]) &
+                (df["trend_semanal"] == True) &
+                (df["PDI"] > df["MDI"])
+            )
+
+            df["setup_sar"] = (
+                (df["Close"] > df["SAR"]) &
+                (df["Close"] > df["EMA69"]) &
+                (df["trend_semanal"] == True)
+            )
+
+            d1 = duracoes_bool(df["setup_principal"].fillna(False).values)
+            d2 = duracoes_bool(df["setup_sar"].fillna(False).values)
+
+            for v in d1:
+                registros_principal.append((ticker, v))
+
+            for v in d2:
+                registros_sar.append((ticker, v))
+
+            hoje.append({
+                "Ativo": ticker,
+                "principal": bool(df["setup_principal"].iloc[-1]),
+                "sar": bool(df["setup_sar"].iloc[-1])
+            })
+
+        except:
+            continue
+
+    return registros_principal, registros_sar, pd.DataFrame(hoje)
+
+with st.spinner("Processando histórico..."):
+    reg_principal, reg_sar, hoje_df = processar()
+
+# ==========================================================
+# FUNÇÃO DE RESUMO
+# ==========================================================
+
+def resumo_duracoes(lista):
+
+    if len(lista) == 0:
         return None
 
-    acertos = 0
-    total = 0
-
-    for idx in idxs[:-20]:
-
-        entrada = df.loc[idx, "Close"]
-        futuro = df.loc[idx:].iloc[1:21]
-
-        if futuro["High"].max() >= entrada * (1 + alvo):
-            acertos += 1
-
-        total += 1
-
-    if total == 0:
-        return None
-
-    return round(100 * acertos / total, 1)
-
-# ============================================================
-
-def analisar(ticker):
-
-    df = yf.download(
-        ticker,
-        period="3y",
-        interval="1d",
-        auto_adjust=False,
-        progress=False
-    )
-
-    if df is None or len(df) < 250:
-        return None
-
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    df = df[["Open","High","Low","Close","Volume"]].copy()
-
-    # ================= Indicadores =================
-
-    df["EMA29"] = ema(df["Close"], 29)
-    df["RSI"] = rsi(df["Close"])
-    df["MACD_H"] = macd_hist(df["Close"])
-    df["STO"] = stochastic(df)
-
-    adx_val, plus_di, minus_di = adx_calc(df)
-
-    df["ADX"] = adx_val
-    df["+DI"] = plus_di
-    df["-DI"] = minus_di
-
-    df["MM20"] = df["Close"].rolling(20).mean()
-
-    df["OBV"] = obv(df)
-    df["OBV_slope"] = df["OBV"].diff(5)
-
-    df["MAX20"] = df["High"].rolling(20).max()
-
-    df = df.dropna()
-
-    if len(df) < 200:
-        return None
-
-    sinais = pd.DataFrame(index=df.index)
-
-    # ================= 10 indicadores =================
-
-    sinais["i1"] = df["Close"] > df["EMA29"]                # tendência principal
-    sinais["i2"] = df["RSI"] > 50
-    sinais["i3"] = df["MACD_H"] > 0
-    sinais["i4"] = df["STO"] > 50
-    sinais["i5"] = df["ADX"] > 20
-    sinais["i6"] = df["+DI"] > df["-DI"]
-    sinais["i7"] = df["Close"] > df["MM20"]
-    sinais["i8"] = df["OBV_slope"] > 0
-    sinais["i9"] = df["Close"] > df["Close"].shift(1)
-    sinais["i10"] = df["Close"] >= df["MAX20"].shift(1)     # rompimento curto
-
-    votos = sinais.sum(axis=1)
-    maioria = votos >= 6
-
-    tipo, alvo = tipo_ativo(ticker)
-
-    prob = calcula_probabilidade(df, maioria, alvo)
-
-    last = df.iloc[-1]
-    last_votos = int(votos.iloc[-1])
-
-    # -----------------------------
-    # Filtros finais do app
-    # -----------------------------
-
-    if last["Close"] <= last["EMA29"]:
-        return None
-
-    if last_votos < 6:
-        return None
-
-    if prob is None or prob < 60:
-        return None
+    dur = pd.Series([x[1] for x in lista])
 
     return {
-        "Ativo": ticker.replace(".SA",""),
-        "Tipo": tipo,
-        "Preço": round(float(last["Close"]), 2),
-        "Indicadores OK": last_votos,
-        "Alvo": f"{int(alvo*100)}%",
-        "Probabilidade (%)": prob
+        "n": len(dur),
+        "media": dur.mean(),
+        "mediana": dur.median(),
+        "p5": (dur >= 5).mean() * 100,
+        "p8": (dur >= 8).mean() * 100,
+        "p10": (dur >= 10).mean() * 100
     }
 
-# ============================================================
+res_principal = resumo_duracoes(reg_principal)
+res_sar = resumo_duracoes(reg_sar)
 
-if st.button("Escanear ativos"):
+# ==========================================================
+# TELA – VISÃO GERAL
+# ==========================================================
 
-    resultados = []
+col1, col2 = st.columns(2)
 
-    with st.spinner("Processando..."):
-        for t in ativos_scan:
-            r = analisar(t)
-            if r:
-                resultados.append(r)
+with col1:
 
-    if len(resultados) == 0:
-        st.warning("Nenhum ativo passou nos filtros (EMA29 + consenso + probabilidade mínima).")
+    st.subheader("Setup principal – persistência")
+
+    if res_principal is None:
+        st.warning("Sem dados suficientes.")
     else:
-        df = pd.DataFrame(resultados)
-        df = df.sort_values("Probabilidade (%)", ascending=False)
-        st.dataframe(df, use_container_width=True)
-        st.write(f"Total de ativos aprovados: {len(df)}")
+        st.write(f"Nº de movimentos analisados: {res_principal['n']}")
+        st.write(f"Duração média: {res_principal['media']:.2f} pregões")
+        st.write(f"Mediana: {res_principal['mediana']:.0f} pregões")
+        st.write(f"P(durar ≥ 5 pregões): {res_principal['p5']:.1f}%")
+        st.write(f"P(durar ≥ 8 pregões): {res_principal['p8']:.1f}%")
+        st.write(f"P(durar ≥ 10 pregões): {res_principal['p10']:.1f}%")
 
-st.sidebar.markdown("""
-Scanner por consenso de indicadores.
+with col2:
 
-Condições finais:
-- Preço acima da EMA 29
-- Mínimo de 6 indicadores positivos
-- Probabilidade histórica mínima de 60%
-- Alvo:
-  - ações e BDRs: 8%
-  - FIIs: 6%
+    st.subheader("Setup com SAR – persistência")
 
-A probabilidade é medida no próprio histórico do ativo,
-verificando se o preço atingiu o alvo em até 20 pregões.
+    if res_sar is None:
+        st.warning("Sem dados suficientes.")
+    else:
+        st.write(f"Nº de movimentos analisados: {res_sar['n']}")
+        st.write(f"Duração média: {res_sar['media']:.2f} pregões")
+        st.write(f"Mediana: {res_sar['mediana']:.0f} pregões")
+        st.write(f"P(durar ≥ 5 pregões): {res_sar['p5']:.1f}%")
+        st.write(f"P(durar ≥ 8 pregões): {res_sar['p8']:.1f}%")
+        st.write(f"P(durar ≥ 10 pregões): {res_sar['p10']:.1f}%")
+
+st.markdown("---")
+
+# ==========================================================
+# ATIVOS EM MOVIMENTO HOJE
+# ==========================================================
+
+st.subheader("Ativos em movimento hoje")
+
+ativos_hoje = []
+
+for _, r in hoje_df.iterrows():
+
+    if r["principal"]:
+        ativos_hoje.append([r["Ativo"], "Setup principal"])
+
+    if r["sar"]:
+        ativos_hoje.append([r["Ativo"], "Setup SAR"])
+
+df_hoje = pd.DataFrame(ativos_hoje, columns=["Ativo", "Setup"])
+
+st.dataframe(df_hoje, use_container_width=True)
+
+st.info("""
+Este aplicativo não mede retorno.
+Ele mede quanto tempo, historicamente, um movimento
+compatível com o seu setup costuma permanecer válido.
+
+O objetivo é evitar entradas quando a tendência
+já está estatisticamente próxima do fim.
 """)
