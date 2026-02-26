@@ -4,10 +4,10 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("Scanner – D+ Diário + D+ Semanal + Setup 1-2-3 + EMA 169")
+st.title("Scanner – D+ Diário + Setup 1-2-3 + EMA 169 + Virada do SAR")
 
 # ==========================================================
-# LISTA DE ATIVOS
+# LISTA DOS ATIVOS
 # ==========================================================
 
 ativos_scan = sorted(set([
@@ -46,11 +46,6 @@ def calcular_dmi(df, periodo=14):
     low = df["Low"]
     close = df["Close"]
 
-    if isinstance(high, pd.DataFrame):
-        high = high.iloc[:, 0]
-        low = low.iloc[:, 0]
-        close = close.iloc[:, 0]
-
     up = high.diff()
     down = -low.diff()
 
@@ -74,8 +69,57 @@ def calcular_dmi(df, periodo=14):
 
 
 # ==========================================================
+# PARABOLIC SAR
+# ==========================================================
+
+def parabolic_sar(high, low, step=0.02, max_step=0.2):
+
+    sar = np.zeros(len(high))
+    trend = 1
+
+    af = step
+    ep = low.iloc[0]
+    sar[0] = low.iloc[0]
+
+    for i in range(1, len(high)):
+
+        prev_sar = sar[i-1]
+
+        if trend == 1:
+            sar[i] = prev_sar + af * (ep - prev_sar)
+
+            sar[i] = min(sar[i], low.iloc[i-1], low.iloc[i])
+
+            if high.iloc[i] > ep:
+                ep = high.iloc[i]
+                af = min(af + step, max_step)
+
+            if low.iloc[i] < sar[i]:
+                trend = -1
+                sar[i] = ep
+                ep = low.iloc[i]
+                af = step
+
+        else:
+            sar[i] = prev_sar + af * (ep - prev_sar)
+
+            sar[i] = max(sar[i], high.iloc[i-1], high.iloc[i])
+
+            if low.iloc[i] < ep:
+                ep = low.iloc[i]
+                af = min(af + step, max_step)
+
+            if high.iloc[i] > sar[i]:
+                trend = 1
+                sar[i] = ep
+                ep = high.iloc[i]
+                af = step
+
+    return pd.Series(sar, index=high.index)
+
+
+# ==========================================================
 # SETUP 1-2-3 DE COMPRA (DIÁRIO)
-# padrão simples e objetivo
 # ==========================================================
 
 def setup_123_compra(df):
@@ -104,74 +148,47 @@ def scan():
 
             df = yf.download(ticker, period="4y", interval="1d", progress=False)
 
-            if df is None or len(df) < 250:
+            if df is None or len(df) < 300:
                 continue
 
             df = df.dropna()
 
-            if isinstance(df["Close"], pd.DataFrame):
-                df["Close"] = df["Close"].iloc[:, 0]
-
-            # ----------------------
-            # DIÁRIO
-            # ----------------------
-
             df["EMA169"] = ema(df["Close"], 169)
 
-            pdi_d, mdi_d = calcular_dmi(df, 14)
+            pdi, mdi = calcular_dmi(df, 14)
 
-            df["PDI"] = pdi_d
-            df["MDI"] = mdi_d
+            df["PDI"] = pdi
+            df["MDI"] = mdi
 
             df["SETUP123"] = setup_123_compra(df)
 
-            cond_diario = (
+            df["SAR"] = parabolic_sar(df["High"], df["Low"])
+
+            # ---------------------------------
+            # VIRADA DO SAR PARA COMPRA
+            # ---------------------------------
+
+            sar_compra = (
+                (df["SAR"].shift(1) > df["Close"].shift(1)) &
+                (df["SAR"] < df["Close"])
+            )
+
+            cond_final = (
                 (df["Close"] > df["EMA169"]) &
                 (df["PDI"] > df["MDI"]) &
-                (df["SETUP123"])
+                (df["SETUP123"]) &
+                (sar_compra)
             )
 
-            # ----------------------
-            # SEMANAL
-            # ----------------------
-
-            weekly = df.resample("W-FRI").agg({
-                "High": "max",
-                "Low": "min",
-                "Close": "last"
-            }).dropna()
-
-            pdi_w, mdi_w = calcular_dmi(weekly, 14)
-
-            weekly["PDI_W"] = pdi_w
-            weekly["MDI_W"] = mdi_w
-
-            df = df.merge(
-                weekly[["PDI_W", "MDI_W"]],
-                left_index=True,
-                right_index=True,
-                how="left"
-            )
-
-            df[["PDI_W", "MDI_W"]] = df[["PDI_W", "MDI_W"]].ffill()
-
-            cond_semanal = df["PDI_W"] > df["MDI_W"]
-
-            # ----------------------
-            # SINAL FINAL
-            # ----------------------
-
-            sinal = cond_diario & cond_semanal
-
-            if sinal.iloc[-1]:
+            if cond_final.iloc[-1]:
 
                 sinais.append({
                     "Ativo": ticker,
                     "Fechamento": float(df["Close"].iloc[-1]),
-                    "PDI diário": float(df["PDI"].iloc[-1]),
-                    "MDI diário": float(df["MDI"].iloc[-1]),
-                    "PDI semanal": float(df["PDI_W"].iloc[-1]),
-                    "MDI semanal": float(df["MDI_W"].iloc[-1])
+                    "EMA169": float(df["EMA169"].iloc[-1]),
+                    "PDI": float(df["PDI"].iloc[-1]),
+                    "MDI": float(df["MDI"].iloc[-1]),
+                    "SAR": float(df["SAR"].iloc[-1])
                 })
 
         except:
@@ -183,25 +200,18 @@ def scan():
 with st.spinner("Buscando sinais..."):
     resultado = scan()
 
-st.subheader("Sinais de compra de hoje")
+st.subheader("Sinais de compra (DIÁRIO)")
 
 if resultado.empty:
-    st.warning("Nenhum ativo atende simultaneamente todas as condições hoje.")
+    st.warning("Nenhum ativo gerou sinal hoje.")
 else:
     st.dataframe(resultado, use_container_width=True)
 
-st.info(
-"""
-Regras do scanner:
+st.info("""
+Regras do scanner (todas no gráfico diário):
 
-DIÁRIO
-• Preço acima da EMA 169
+• Fechamento acima da EMA 169
 • DI+ maior que DI-
 • Setup 1-2-3 de compra
-
-SEMANAL
-• DI+ maior que DI-
-
-Scanner apenas para localizar ativos em condição técnica.
-"""
-)
+• SAR parabólico acabou de virar para compra
+""")
