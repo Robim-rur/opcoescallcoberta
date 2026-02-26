@@ -7,14 +7,14 @@ st.set_page_config(layout="wide")
 st.title("Scanner – D+ > D- + EMA169 + Flip do SAR (ranking por probabilidade de gain)")
 
 # =========================================================
-# CONFIGURAÇÃO DA ESTATÍSTICA
+# CONFIGURAÇÃO
 # =========================================================
 
-GAIN_PCT = 0.02     # 2% de alvo
-HORIZON = 10        # até 10 pregões
+GAIN_PCT = 0.02
+HORIZON = 10
 
 # =========================================================
-# LISTA DOS ATIVOS  (sua lista completa)
+# ATIVOS
 # =========================================================
 
 ativos_scan = sorted(set([
@@ -79,6 +79,7 @@ def parabolic_sar(df, step=0.02, max_step=0.2):
         sar[i] = sar[i-1] + af * (ep - sar[i-1])
 
         if trend == 1:
+
             sar[i] = min(sar[i], low[i-1], low[i])
 
             if high[i] > ep:
@@ -90,7 +91,9 @@ def parabolic_sar(df, step=0.02, max_step=0.2):
                 sar[i] = ep
                 ep = low[i]
                 af = step
+
         else:
+
             sar[i] = max(sar[i], high[i-1], high[i])
 
             if low[i] < ep:
@@ -118,7 +121,8 @@ def processar():
 
         try:
             df = yf.download(ticker, period="12y", interval="1d", progress=False)
-            if df is None or len(df) < 300:
+
+            if df is None or df.empty or len(df) < 300:
                 continue
 
             df = df.dropna()
@@ -127,7 +131,10 @@ def processar():
             df["PDI"], df["MDI"] = calcular_dmi(df)
             df["SAR"] = parabolic_sar(df)
 
-            df["flip_sar"] = (df["Close"] > df["SAR"]) & (df["Close"].shift(1) <= df["SAR"].shift(1))
+            df["flip_sar"] = (
+                (df["Close"] > df["SAR"]) &
+                (df["Close"].shift(1) <= df["SAR"].shift(1))
+            )
 
             df["sinal"] = (
                 (df["Close"] > df["EMA169"]) &
@@ -138,13 +145,12 @@ def processar():
             ganhos = 0
             total = 0
 
-            idx = df.index
-
             for i in range(len(df) - HORIZON):
 
                 if df["sinal"].iloc[i]:
 
                     total += 1
+
                     preco = df["Close"].iloc[i]
                     alvo = preco * (1 + GAIN_PCT)
 
@@ -153,32 +159,44 @@ def processar():
                     if max_fut >= alvo:
                         ganhos += 1
 
-            prob = ganhos / total * 100 if total > 0 else 0
+            prob = (ganhos / total * 100) if total > 0 else 0.0
 
-            hoje = False
-            if df["sinal"].iloc[-1]:
-                hoje = True
+            hoje = bool(df["sinal"].iloc[-1])
 
             resultados.append({
                 "Ativo": ticker,
                 "Sinal hoje": "SIM" if hoje else "",
-                "Ocorrências históricas": total,
-                "Probabilidade de atingir gain (%)": round(prob,2)
+                "Ocorrências históricas": int(total),
+                "Probabilidade de atingir gain (%)": round(prob, 2)
             })
 
         except:
-            pass
+            continue
 
-    return pd.DataFrame(resultados)
+    # garante colunas mesmo vazio
+    colunas = [
+        "Ativo",
+        "Sinal hoje",
+        "Ocorrências históricas",
+        "Probabilidade de atingir gain (%)"
+    ]
 
-with st.spinner("Processando..."):
+    return pd.DataFrame(resultados, columns=colunas)
+
+
+with st.spinner("Processando ativos..."):
     tabela = processar()
 
-tabela = tabela.sort_values("Probabilidade de atingir gain (%)", ascending=False)
+if tabela.empty:
+    st.warning("Nenhum ativo conseguiu ser processado ou não houve histórico suficiente.")
+else:
+    tabela = tabela.sort_values(
+        "Probabilidade de atingir gain (%)",
+        ascending=False
+    )
 
-st.subheader("Ranking – maior probabilidade histórica de atingir o gain")
-
-st.dataframe(tabela, use_container_width=True)
+    st.subheader("Ranking – maior probabilidade histórica de atingir o gain")
+    st.dataframe(tabela, use_container_width=True)
 
 st.info(
 f"""
