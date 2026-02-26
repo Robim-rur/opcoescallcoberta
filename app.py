@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("Scanner de Entradas – Tendência + D+ > D- (diário)")
+st.title("Scanner – D+ Diário + D+ Semanal + Setup 1-2-3 + EMA 169")
 
 # ==========================================================
 # LISTA DE ATIVOS
@@ -46,7 +46,6 @@ def calcular_dmi(df, periodo=14):
     low = df["Low"]
     close = df["Close"]
 
-    # garante Series (bug do yfinance)
     if isinstance(high, pd.DataFrame):
         high = high.iloc[:, 0]
         low = low.iloc[:, 0]
@@ -63,7 +62,6 @@ def calcular_dmi(df, periodo=14):
     tr3 = (low - close.shift()).abs()
 
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
     atr = tr.rolling(periodo).mean()
 
     plus_dm = pd.Series(plus_dm, index=high.index)
@@ -76,7 +74,23 @@ def calcular_dmi(df, periodo=14):
 
 
 # ==========================================================
-# PROCESSAMENTO
+# SETUP 1-2-3 DE COMPRA (DIÁRIO)
+# padrão simples e objetivo
+# ==========================================================
+
+def setup_123_compra(df):
+
+    cond = (
+        (df["Low"].shift(2) > df["Low"].shift(1)) &
+        (df["Low"] > df["Low"].shift(1)) &
+        (df["Close"] > df["High"].shift(1))
+    )
+
+    return cond
+
+
+# ==========================================================
+# SCANNER
 # ==========================================================
 
 @st.cache_data(show_spinner=False)
@@ -87,44 +101,77 @@ def scan():
     for ticker in ativos_scan:
 
         try:
-            df = yf.download(ticker, period="2y", interval="1d", progress=False)
 
-            if df is None or len(df) < 200:
+            df = yf.download(ticker, period="4y", interval="1d", progress=False)
+
+            if df is None or len(df) < 250:
                 continue
 
             df = df.dropna()
 
-            close = df["Close"]
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
-                df["Close"] = close
+            if isinstance(df["Close"], pd.DataFrame):
+                df["Close"] = df["Close"].iloc[:, 0]
 
-            df["EMA69"] = ema(df["Close"], 69)
+            # ----------------------
+            # DIÁRIO
+            # ----------------------
 
-            plus_di, minus_di = calcular_dmi(df, 14)
+            df["EMA169"] = ema(df["Close"], 169)
 
-            df["PDI"] = plus_di
-            df["MDI"] = minus_di
+            pdi_d, mdi_d = calcular_dmi(df, 14)
 
-            # tendência simples de alta
-            df["trend"] = (
-                (df["Close"] > df["EMA69"]) &
-                (df["EMA69"] > df["EMA69"].shift(1))
+            df["PDI"] = pdi_d
+            df["MDI"] = mdi_d
+
+            df["SETUP123"] = setup_123_compra(df)
+
+            cond_diario = (
+                (df["Close"] > df["EMA169"]) &
+                (df["PDI"] > df["MDI"]) &
+                (df["SETUP123"])
             )
 
-            # sinal
-            df["sinal"] = (
-                df["trend"] &
-                (df["PDI"] > df["MDI"])
+            # ----------------------
+            # SEMANAL
+            # ----------------------
+
+            weekly = df.resample("W-FRI").agg({
+                "High": "max",
+                "Low": "min",
+                "Close": "last"
+            }).dropna()
+
+            pdi_w, mdi_w = calcular_dmi(weekly, 14)
+
+            weekly["PDI_W"] = pdi_w
+            weekly["MDI_W"] = mdi_w
+
+            df = df.merge(
+                weekly[["PDI_W", "MDI_W"]],
+                left_index=True,
+                right_index=True,
+                how="left"
             )
 
-            if df["sinal"].iloc[-1]:
+            df[["PDI_W", "MDI_W"]] = df[["PDI_W", "MDI_W"]].ffill()
+
+            cond_semanal = df["PDI_W"] > df["MDI_W"]
+
+            # ----------------------
+            # SINAL FINAL
+            # ----------------------
+
+            sinal = cond_diario & cond_semanal
+
+            if sinal.iloc[-1]:
 
                 sinais.append({
                     "Ativo": ticker,
                     "Fechamento": float(df["Close"].iloc[-1]),
-                    "PDI": float(df["PDI"].iloc[-1]),
-                    "MDI": float(df["MDI"].iloc[-1])
+                    "PDI diário": float(df["PDI"].iloc[-1]),
+                    "MDI diário": float(df["MDI"].iloc[-1]),
+                    "PDI semanal": float(df["PDI_W"].iloc[-1]),
+                    "MDI semanal": float(df["MDI_W"].iloc[-1])
                 })
 
         except:
@@ -133,27 +180,28 @@ def scan():
     return pd.DataFrame(sinais)
 
 
-with st.spinner("Procurando sinais..."):
+with st.spinner("Buscando sinais..."):
     resultado = scan()
 
-st.subheader("Sinais de entrada de hoje")
+st.subheader("Sinais de compra de hoje")
 
 if resultado.empty:
-    st.warning("Nenhum ativo em condição hoje.")
+    st.warning("Nenhum ativo atende simultaneamente todas as condições hoje.")
 else:
-    st.dataframe(
-        resultado.sort_values("PDI", ascending=False),
-        use_container_width=True
-    )
+    st.dataframe(resultado, use_container_width=True)
 
 st.info(
 """
 Regras do scanner:
 
-• Tendência de alta no diário (preço acima da EMA 69 e EMA 69 ascendente)
-• DI+ maior que DI− no diário
+DIÁRIO
+• Preço acima da EMA 169
+• DI+ maior que DI-
+• Setup 1-2-3 de compra
 
-Este app apenas localiza ativos em condição técnica de entrada.
-Não calcula alvo, stop ou expectativa.
+SEMANAL
+• DI+ maior que DI-
+
+Scanner apenas para localizar ativos em condição técnica.
 """
 )
