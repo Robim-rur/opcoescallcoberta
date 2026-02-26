@@ -4,11 +4,18 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("Scanner – D+ Diário + Setup 1-2-3 + EMA 169 + Virada do SAR")
+st.title("Scanner – D+ > D- + EMA169 + Flip do SAR (ranking por probabilidade de gain)")
 
-# ==========================================================
-# LISTA DOS ATIVOS
-# ==========================================================
+# =========================================================
+# CONFIGURAÇÃO DA ESTATÍSTICA
+# =========================================================
+
+GAIN_PCT = 0.02     # 2% de alvo
+HORIZON = 10        # até 10 pregões
+
+# =========================================================
+# LISTA DOS ATIVOS  (sua lista completa)
+# =========================================================
 
 ativos_scan = sorted(set([
 "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -18,29 +25,20 @@ ativos_scan = sorted(set([
 "HAPV3.SA","HYPE3.SA","ITSA4.SA","ITUB4.SA","JBSS3.SA","KLBN11.SA","LREN3.SA","LWSA3.SA","MGLU3.SA","MRFG3.SA",
 "MRVE3.SA","MULT3.SA","NTCO3.SA","PETR3.SA","PETR4.SA","PRIO3.SA","RADL3.SA","RAIL3.SA","RAIZ4.SA","RENT3.SA",
 "RECV3.SA","SANB11.SA","SBSP3.SA","SLCE3.SA","SMTO3.SA","SUZB3.SA","TAEE11.SA","TIMS3.SA","TOTS3.SA","TRPL4.SA",
-"UGPA3.SA","USIM5.SA","VALE3.SA","VIVT3.SA","VIVA3.SA","WEGE3.SA","YDUQ3.SA","AURE3.SA","BHIA3.SA","CASH3.SA",
-"CVCB3.SA","DIRR3.SA","ENAT3.SA","GMAT3.SA","IFCM3.SA","INTB3.SA","JHSF3.SA","KEPL3.SA","MOVI3.SA","ORVR3.SA",
-"PETZ3.SA","PLAS3.SA","POMO4.SA","POSI3.SA","RANI3.SA","RAPT4.SA","STBP3.SA","TEND3.SA","TUPY3.SA",
-"BRSR6.SA","CXSE3.SA","AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA","TSLA34.SA","META34.SA","NFLX34.SA",
-"NVDC34.SA","MELI34.SA","BABA34.SA","DISB34.SA","PYPL34.SA","JNJB34.SA","PGCO34.SA","KOCH34.SA","VISA34.SA",
-"WMTB34.SA","NIKE34.SA","ADBE34.SA","AVGO34.SA","CSCO34.SA","COST34.SA","CVSH34.SA","GECO34.SA","GSGI34.SA",
-"HDCO34.SA","INTC34.SA","JPMC34.SA","MAEL34.SA","MCDP34.SA","MDLZ34.SA","MRCK34.SA","ORCL34.SA","PEP334.SA",
-"PFIZ34.SA","PMIC34.SA","QCOM34.SA","SBUX34.SA","TGTB34.SA","TMOS34.SA","TXN34.SA","UNHH34.SA","UPSB34.SA",
-"VZUA34.SA","ABTT34.SA","AMGN34.SA","AXPB34.SA","BAOO34.SA","CATP34.SA","HONB34.SA","BOVA11.SA","IVVB11.SA",
-"SMAL11.SA","HASH11.SA","GOLD11.SA","GARE11.SA","HGLG11.SA","XPLG11.SA","VILG11.SA","BRCO11.SA","BTLG11.SA",
-"XPML11.SA","VISC11.SA","HSML11.SA","MALL11.SA","KNRI11.SA","JSRE11.SA","PVBI11.SA","HGRE11.SA","MXRF11.SA",
-"KNCR11.SA","KNIP11.SA","CPTS11.SA","IRDM11.SA","DIVO11.SA","NDIV11.SA","SPUB11.SA"
+"UGPA3.SA","USIM5.SA","VALE3.SA","VIVT3.SA","VIVA3.SA","WEGE3.SA","YDUQ3.SA",
+"AAPL34.SA","AMZO34.SA","GOGL34.SA","MSFT34.SA","TSLA34.SA","META34.SA","NFLX34.SA",
+"NVDC34.SA","MELI34.SA","BABA34.SA","DISB34.SA","VISA34.SA","WMTB34.SA",
+"BOVA11.SA","IVVB11.SA","SMAL11.SA","GOLD11.SA","DIVO11.SA","NDIV11.SA"
 ]))
 
-# ==========================================================
+# =========================================================
 # INDICADORES
-# ==========================================================
+# =========================================================
 
-def ema(series, n):
-    return series.ewm(span=n, adjust=False).mean()
+def ema(s, n):
+    return s.ewm(span=n, adjust=False).mean()
 
-
-def calcular_dmi(df, periodo=14):
+def calcular_dmi(df, n=14):
 
     high = df["High"]
     low = df["Low"]
@@ -49,169 +47,148 @@ def calcular_dmi(df, periodo=14):
     up = high.diff()
     down = -low.diff()
 
-    plus_dm = np.where((up > down) & (up > 0), up, 0.0)
-    minus_dm = np.where((down > up) & (down > 0), down, 0.0)
+    plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=df.index)
+    minus_dm = pd.Series(np.where((down > up) & (down > 0), down, 0.0), index=df.index)
 
-    tr1 = high - low
-    tr2 = (high - close.shift()).abs()
-    tr3 = (low - close.shift()).abs()
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs()
+    ], axis=1).max(axis=1)
 
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = tr.rolling(periodo).mean()
+    atr = tr.rolling(n).mean()
 
-    plus_dm = pd.Series(plus_dm, index=high.index)
-    minus_dm = pd.Series(minus_dm, index=high.index)
-
-    plus_di = 100 * (plus_dm.rolling(periodo).mean() / atr)
-    minus_di = 100 * (minus_dm.rolling(periodo).mean() / atr)
+    plus_di = 100 * plus_dm.rolling(n).mean() / atr
+    minus_di = 100 * minus_dm.rolling(n).mean() / atr
 
     return plus_di, minus_di
 
+def parabolic_sar(df, step=0.02, max_step=0.2):
 
-# ==========================================================
-# PARABOLIC SAR
-# ==========================================================
+    high = df["High"].values
+    low = df["Low"].values
 
-def parabolic_sar(high, low, step=0.02, max_step=0.2):
-
-    sar = np.zeros(len(high))
+    sar = np.zeros(len(df))
     trend = 1
-
     af = step
-    ep = low.iloc[0]
-    sar[0] = low.iloc[0]
+    ep = high[0]
+    sar[0] = low[0]
 
-    for i in range(1, len(high)):
+    for i in range(1, len(df)):
 
-        prev_sar = sar[i-1]
+        sar[i] = sar[i-1] + af * (ep - sar[i-1])
 
         if trend == 1:
-            sar[i] = prev_sar + af * (ep - prev_sar)
+            sar[i] = min(sar[i], low[i-1], low[i])
 
-            sar[i] = min(sar[i], low.iloc[i-1], low.iloc[i])
-
-            if high.iloc[i] > ep:
-                ep = high.iloc[i]
+            if high[i] > ep:
+                ep = high[i]
                 af = min(af + step, max_step)
 
-            if low.iloc[i] < sar[i]:
+            if low[i] < sar[i]:
                 trend = -1
                 sar[i] = ep
-                ep = low.iloc[i]
+                ep = low[i]
                 af = step
-
         else:
-            sar[i] = prev_sar + af * (ep - prev_sar)
+            sar[i] = max(sar[i], high[i-1], high[i])
 
-            sar[i] = max(sar[i], high.iloc[i-1], high.iloc[i])
-
-            if low.iloc[i] < ep:
-                ep = low.iloc[i]
+            if low[i] < ep:
+                ep = low[i]
                 af = min(af + step, max_step)
 
-            if high.iloc[i] > sar[i]:
+            if high[i] > sar[i]:
                 trend = 1
                 sar[i] = ep
-                ep = high.iloc[i]
+                ep = high[i]
                 af = step
 
-    return pd.Series(sar, index=high.index)
+    return pd.Series(sar, index=df.index)
 
-
-# ==========================================================
-# SETUP 1-2-3 DE COMPRA (DIÁRIO)
-# ==========================================================
-
-def setup_123_compra(df):
-
-    cond = (
-        (df["Low"].shift(2) > df["Low"].shift(1)) &
-        (df["Low"] > df["Low"].shift(1)) &
-        (df["Close"] > df["High"].shift(1))
-    )
-
-    return cond
-
-
-# ==========================================================
-# SCANNER
-# ==========================================================
+# =========================================================
+# PROCESSAMENTO
+# =========================================================
 
 @st.cache_data(show_spinner=False)
-def scan():
+def processar():
 
-    sinais = []
+    resultados = []
 
     for ticker in ativos_scan:
 
         try:
-
-            df = yf.download(ticker, period="4y", interval="1d", progress=False)
-
+            df = yf.download(ticker, period="12y", interval="1d", progress=False)
             if df is None or len(df) < 300:
                 continue
 
             df = df.dropna()
 
             df["EMA169"] = ema(df["Close"], 169)
+            df["PDI"], df["MDI"] = calcular_dmi(df)
+            df["SAR"] = parabolic_sar(df)
 
-            pdi, mdi = calcular_dmi(df, 14)
+            df["flip_sar"] = (df["Close"] > df["SAR"]) & (df["Close"].shift(1) <= df["SAR"].shift(1))
 
-            df["PDI"] = pdi
-            df["MDI"] = mdi
-
-            df["SETUP123"] = setup_123_compra(df)
-
-            df["SAR"] = parabolic_sar(df["High"], df["Low"])
-
-            # ---------------------------------
-            # VIRADA DO SAR PARA COMPRA
-            # ---------------------------------
-
-            sar_compra = (
-                (df["SAR"].shift(1) > df["Close"].shift(1)) &
-                (df["SAR"] < df["Close"])
-            )
-
-            cond_final = (
+            df["sinal"] = (
                 (df["Close"] > df["EMA169"]) &
                 (df["PDI"] > df["MDI"]) &
-                (df["SETUP123"]) &
-                (sar_compra)
+                (df["flip_sar"])
             )
 
-            if cond_final.iloc[-1]:
+            ganhos = 0
+            total = 0
 
-                sinais.append({
-                    "Ativo": ticker,
-                    "Fechamento": float(df["Close"].iloc[-1]),
-                    "EMA169": float(df["EMA169"].iloc[-1]),
-                    "PDI": float(df["PDI"].iloc[-1]),
-                    "MDI": float(df["MDI"].iloc[-1]),
-                    "SAR": float(df["SAR"].iloc[-1])
-                })
+            idx = df.index
+
+            for i in range(len(df) - HORIZON):
+
+                if df["sinal"].iloc[i]:
+
+                    total += 1
+                    preco = df["Close"].iloc[i]
+                    alvo = preco * (1 + GAIN_PCT)
+
+                    max_fut = df["High"].iloc[i+1:i+HORIZON+1].max()
+
+                    if max_fut >= alvo:
+                        ganhos += 1
+
+            prob = ganhos / total * 100 if total > 0 else 0
+
+            hoje = False
+            if df["sinal"].iloc[-1]:
+                hoje = True
+
+            resultados.append({
+                "Ativo": ticker,
+                "Sinal hoje": "SIM" if hoje else "",
+                "Ocorrências históricas": total,
+                "Probabilidade de atingir gain (%)": round(prob,2)
+            })
 
         except:
-            continue
+            pass
 
-    return pd.DataFrame(sinais)
+    return pd.DataFrame(resultados)
 
+with st.spinner("Processando..."):
+    tabela = processar()
 
-with st.spinner("Buscando sinais..."):
-    resultado = scan()
+tabela = tabela.sort_values("Probabilidade de atingir gain (%)", ascending=False)
 
-st.subheader("Sinais de compra (DIÁRIO)")
+st.subheader("Ranking – maior probabilidade histórica de atingir o gain")
 
-if resultado.empty:
-    st.warning("Nenhum ativo gerou sinal hoje.")
-else:
-    st.dataframe(resultado, use_container_width=True)
+st.dataframe(tabela, use_container_width=True)
 
-st.info("""
-Regras do scanner (todas no gráfico diário):
+st.info(
+f"""
+Sinal diário quando:
 
-• Fechamento acima da EMA 169
-• DI+ maior que DI-
-• Setup 1-2-3 de compra
-• SAR parabólico acabou de virar para compra
-""")
+• Close acima da EMA 169
+• DI+ maior que DI−
+• Flip do SAR para compra
+
+Probabilidade calculada para atingir {GAIN_PCT*100:.1f}% de gain
+em até {HORIZON} pregões após o sinal.
+"""
+)
