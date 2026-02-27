@@ -4,18 +4,18 @@ import pandas as pd
 import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("Scanner – D+ > D- + EMA169 + Flip do SAR (ranking por probabilidade de gain)")
+st.title("Scanner – EMA169 + DMI + Flip SAR | Ranking por ganho antes do loss")
 
 # =========================================================
 # CONFIG
 # =========================================================
 
-GAIN_PCT = 0.02
+GAIN_PCT = 0.06
+LOSS_PCT = 0.04
 HORIZON = 10
 
 # =========================================================
 # ATIVOS
-# (mantive exatamente como você vinha usando)
 # =========================================================
 
 ativos_scan = sorted(set([
@@ -37,16 +37,11 @@ ativos_scan = sorted(set([
 # =========================================================
 
 def ajustar_df(df):
-
-    # remove multiindex de colunas, quando existir
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-
     return df
 
 def serie(col):
-
-    # garante Series 1D
     if isinstance(col, pd.DataFrame):
         return col.iloc[:, 0]
     return col
@@ -157,11 +152,11 @@ def processar():
             df = df.dropna()
 
             close = serie(df["Close"])
+            high = serie(df["High"])
+            low = serie(df["Low"])
 
             df["EMA169"] = ema(close, 169)
-
             df["PDI"], df["MDI"] = calcular_dmi(df)
-
             df["SAR"] = parabolic_sar(df)
 
             df["flip_sar"] = (
@@ -176,23 +171,36 @@ def processar():
             )
 
             ganhos = 0
+            perdas = 0
             total = 0
-
-            high = serie(df["High"])
 
             for i in range(len(df) - HORIZON):
 
-                if df["sinal"].iloc[i]:
+                if not df["sinal"].iloc[i]:
+                    continue
 
-                    total += 1
+                total += 1
 
-                    preco = close.iloc[i]
-                    alvo = preco * (1 + GAIN_PCT)
+                entrada = close.iloc[i]
+                alvo = entrada * (1 + GAIN_PCT)
+                stop = entrada * (1 - LOSS_PCT)
 
-                    max_fut = high.iloc[i+1:i+HORIZON+1].max()
+                resultado = None
 
-                    if max_fut >= alvo:
-                        ganhos += 1
+                for j in range(i + 1, i + HORIZON + 1):
+
+                    if low.iloc[j] <= stop:
+                        resultado = "loss"
+                        break
+
+                    if high.iloc[j] >= alvo:
+                        resultado = "gain"
+                        break
+
+                if resultado == "gain":
+                    ganhos += 1
+                elif resultado == "loss":
+                    perdas += 1
 
             prob = (ganhos / total * 100) if total > 0 else 0.0
 
@@ -201,8 +209,10 @@ def processar():
             resultados.append({
                 "Ativo": ticker,
                 "Sinal hoje": "SIM" if hoje else "",
-                "Ocorrências históricas": int(total),
-                "Probabilidade de atingir gain (%)": round(prob, 2)
+                "Ocorrências": int(total),
+                "Ganhos antes do loss": int(ganhos),
+                "Loss antes do gain": int(perdas),
+                "Probabilidade de atingir 6% antes de -4% (%)": round(prob, 2)
             })
 
         except:
@@ -211,8 +221,10 @@ def processar():
     colunas = [
         "Ativo",
         "Sinal hoje",
-        "Ocorrências históricas",
-        "Probabilidade de atingir gain (%)"
+        "Ocorrências",
+        "Ganhos antes do loss",
+        "Loss antes do gain",
+        "Probabilidade de atingir 6% antes de -4% (%)"
     ]
 
     return pd.DataFrame(resultados, columns=colunas)
@@ -226,22 +238,23 @@ if tabela.empty:
 else:
 
     tabela = tabela.sort_values(
-        "Probabilidade de atingir gain (%)",
+        "Probabilidade de atingir 6% antes de -4% (%)",
         ascending=False
     )
 
-    st.subheader("Ranking – maior probabilidade histórica de atingir o gain")
+    st.subheader("Ranking – maior probabilidade de gain antes do loss")
     st.dataframe(tabela, use_container_width=True)
 
 st.info(
 f"""
-Sinal diário quando:
+Sinal quando:
 
 • Close acima da EMA 169
 • DI+ maior que DI−
-• Flip do SAR (mudança para compra)
+• Flip do SAR para compra
 
-Probabilidade calculada para atingir {GAIN_PCT*100:.1f}% de gain
+Ranking pela probabilidade de atingir +6,0%
+antes de atingir −4,0%
 em até {HORIZON} pregões após o sinal.
 """
 )
