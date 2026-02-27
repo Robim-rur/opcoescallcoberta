@@ -113,7 +113,7 @@ def calcular_sar(df, af=0.02, max_af=0.2):
     return pd.Series(sar, index=df.index)
 
 # ============================================================
-# PROBABILIDADE
+# PROBABILIDADE (CORRIGIDA)
 # ============================================================
 
 def probabilidade_gain(df, sinais_idx):
@@ -143,11 +143,12 @@ def probabilidade_gain(df, sinais_idx):
                 break
 
         total += 1
+
         if bateu_gain:
             sucessos += 1
 
     if total == 0:
-        return np.nan, 0
+        return 0.0, 0
 
     return sucessos / total * 100, total
 
@@ -184,7 +185,7 @@ def analisar_ativo(ticker):
         (df["sar_compra"])
     )
 
-    sinais = df.index[df["condicao"] == True]
+    sinais = df.index[df["condicao"]]
 
     if len(sinais) == 0:
         return None
@@ -206,7 +207,7 @@ def analisar_ativo(ticker):
 
     return {
         "Ativo": ticker.replace(".SA", ""),
-        "Probabilidade de atingir 6% em até 20 pregões sem stop (%)": round(float(prob), 2),
+        "Probabilidade de atingir 6% em até 20 pregões sem stop (%)": round(prob, 2),
         "Quantidade histórica de sinais": int(total)
     }
 
@@ -219,7 +220,6 @@ if st.button("Rodar scanner"):
     resultados = []
 
     barra = st.progress(0.0)
-
     total_ativos = len(ativos_scan)
 
     for i, ticker in enumerate(ativos_scan):
@@ -239,12 +239,9 @@ if st.button("Rodar scanner"):
 
         tabela = pd.DataFrame(resultados)
 
-        tabela = tabela.dropna()
-
         coluna = "Probabilidade de atingir 6% em até 20 pregões sem stop (%)"
 
-        if coluna in tabela.columns:
-            tabela = tabela.sort_values(coluna, ascending=False)
+        tabela = tabela.sort_values(coluna, ascending=False)
 
         st.subheader("Ranking – maior probabilidade estatística de atingir +6% antes de −4%")
 
