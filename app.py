@@ -7,7 +7,7 @@ st.set_page_config(layout="wide")
 st.title("Scanner – D+ > D- + EMA169 + Flip do SAR (ranking por probabilidade de gain)")
 
 # =========================================================
-# CONFIGURAÇÃO
+# CONFIG
 # =========================================================
 
 GAIN_PCT = 0.02
@@ -15,6 +15,7 @@ HORIZON = 10
 
 # =========================================================
 # ATIVOS
+# (mantive exatamente como você vinha usando)
 # =========================================================
 
 ativos_scan = sorted(set([
@@ -32,6 +33,25 @@ ativos_scan = sorted(set([
 ]))
 
 # =========================================================
+# UTIL
+# =========================================================
+
+def ajustar_df(df):
+
+    # remove multiindex de colunas, quando existir
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    return df
+
+def serie(col):
+
+    # garante Series 1D
+    if isinstance(col, pd.DataFrame):
+        return col.iloc[:, 0]
+    return col
+
+# =========================================================
 # INDICADORES
 # =========================================================
 
@@ -40,9 +60,9 @@ def ema(s, n):
 
 def calcular_dmi(df, n=14):
 
-    high = df["High"]
-    low = df["Low"]
-    close = df["Close"]
+    high = serie(df["High"])
+    low = serie(df["Low"])
+    close = serie(df["Close"])
 
     up = high.diff()
     down = -low.diff()
@@ -65,10 +85,11 @@ def calcular_dmi(df, n=14):
 
 def parabolic_sar(df, step=0.02, max_step=0.2):
 
-    high = df["High"].values
-    low = df["Low"].values
+    high = serie(df["High"]).values
+    low = serie(df["Low"]).values
 
     sar = np.zeros(len(df))
+
     trend = 1
     af = step
     ep = high[0]
@@ -120,24 +141,36 @@ def processar():
     for ticker in ativos_scan:
 
         try:
-            df = yf.download(ticker, period="12y", interval="1d", progress=False)
+
+            df = yf.download(
+                ticker,
+                period="12y",
+                interval="1d",
+                auto_adjust=False,
+                progress=False
+            )
 
             if df is None or df.empty or len(df) < 300:
                 continue
 
+            df = ajustar_df(df)
             df = df.dropna()
 
-            df["EMA169"] = ema(df["Close"], 169)
+            close = serie(df["Close"])
+
+            df["EMA169"] = ema(close, 169)
+
             df["PDI"], df["MDI"] = calcular_dmi(df)
+
             df["SAR"] = parabolic_sar(df)
 
             df["flip_sar"] = (
-                (df["Close"] > df["SAR"]) &
-                (df["Close"].shift(1) <= df["SAR"].shift(1))
+                (close > df["SAR"]) &
+                (close.shift(1) <= df["SAR"].shift(1))
             )
 
             df["sinal"] = (
-                (df["Close"] > df["EMA169"]) &
+                (close > df["EMA169"]) &
                 (df["PDI"] > df["MDI"]) &
                 (df["flip_sar"])
             )
@@ -145,16 +178,18 @@ def processar():
             ganhos = 0
             total = 0
 
+            high = serie(df["High"])
+
             for i in range(len(df) - HORIZON):
 
                 if df["sinal"].iloc[i]:
 
                     total += 1
 
-                    preco = df["Close"].iloc[i]
+                    preco = close.iloc[i]
                     alvo = preco * (1 + GAIN_PCT)
 
-                    max_fut = df["High"].iloc[i+1:i+HORIZON+1].max()
+                    max_fut = high.iloc[i+1:i+HORIZON+1].max()
 
                     if max_fut >= alvo:
                         ganhos += 1
@@ -173,7 +208,6 @@ def processar():
         except:
             continue
 
-    # garante colunas mesmo vazio
     colunas = [
         "Ativo",
         "Sinal hoje",
@@ -188,8 +222,9 @@ with st.spinner("Processando ativos..."):
     tabela = processar()
 
 if tabela.empty:
-    st.warning("Nenhum ativo conseguiu ser processado ou não houve histórico suficiente.")
+    st.warning("Nenhum ativo conseguiu ser processado.")
 else:
+
     tabela = tabela.sort_values(
         "Probabilidade de atingir gain (%)",
         ascending=False
@@ -204,7 +239,7 @@ Sinal diário quando:
 
 • Close acima da EMA 169
 • DI+ maior que DI−
-• Flip do SAR para compra
+• Flip do SAR (mudança para compra)
 
 Probabilidade calculada para atingir {GAIN_PCT*100:.1f}% de gain
 em até {HORIZON} pregões após o sinal.
